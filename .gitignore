@@ -12,3 +12,7 @@ dataset /
 # --- Editors / OS ---
 .vscode/
 .idea/
+
+# --- Docs not tracked in Git (local only) ---
+plan_rada.html
+reference /*.pdf
