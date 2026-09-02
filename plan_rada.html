@@ -1,0 +1,243 @@
+<!DOCTYPE html>
+<html lang="sr">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Plan rada — IDS za zaštitu CAN komunikacije</title>
+<style>
+  :root {
+    --bg: #f7f9fc;
+    --card: #ffffff;
+    --ink: #1f2933;
+    --muted: #52606d;
+    --border: #d9e2ec;
+    --accent: #0b6e99;
+    --accent-soft: #e3f2fb;
+    --day1: #0b6e99;
+    --day2: #8a4d9e;
+    --day3: #b26a00;
+    --bonus: #2e7d32;
+  }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0;
+    background: var(--bg);
+    color: var(--ink);
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+    line-height: 1.55;
+  }
+  .wrap { max-width: 900px; margin: 0 auto; padding: 32px 20px 64px; }
+  header.hero {
+    background: linear-gradient(135deg, var(--accent), #07485f);
+    color: #fff;
+    border-radius: 14px;
+    padding: 34px 32px;
+    margin-bottom: 28px;
+  }
+  header.hero h1 { margin: 0 0 8px; font-size: 26px; line-height: 1.25; }
+  header.hero p { margin: 4px 0; color: #d5ecf7; }
+  .chip {
+    display: inline-block; background: rgba(255,255,255,.16);
+    padding: 4px 12px; border-radius: 999px; font-size: 13px; margin-top: 12px;
+  }
+  h2.section {
+    font-size: 20px; margin: 34px 0 14px; padding-bottom: 8px;
+    border-bottom: 3px solid var(--accent);
+  }
+  h3 { font-size: 17px; margin: 22px 0 8px; }
+
+  /* KARTICE */
+  .card {
+    background: var(--card); border: 1px solid var(--border);
+    border-radius: 12px; padding: 18px 20px; margin-bottom: 16px;
+    box-shadow: 0 1px 3px rgba(15,23,42,.05);
+  }
+  .grid2 { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; }
+
+  /* DANI */
+  .day { border-left: 6px solid var(--day1); }
+  .day.day2 { border-left-color: var(--day2); }
+  .day.day3 { border-left-color: var(--day3); }
+  .day .dayhead {
+    font-weight: 700; font-size: 18px; margin-bottom: 10px;
+    display: flex; align-items: center; gap: 10px;
+  }
+  .day.day2 .dayhead { color: var(--day2); }
+  .day.day3 .dayhead { color: var(--day3); }
+  .day ol { margin: 0; padding-left: 22px; }
+  .day li { margin-bottom: 8px; }
+  .tag {
+    display: inline-block; font-size: 12px; font-weight: 600;
+    background: var(--accent-soft); color: var(--accent);
+    border-radius: 6px; padding: 2px 8px; margin-left: 6px; white-space: nowrap;
+  }
+  .day2 .tag { background: #f0e6f7; color: var(--day2); }
+  .day3 .tag { background: #fff3e0; color: var(--day3); }
+
+  /* TABELE */
+  table { width: 100%; border-collapse: collapse; margin: 12px 0 8px; font-size: 14.5px; }
+  th, td { border: 1px solid var(--border); padding: 9px 11px; text-align: left; vertical-align: top; }
+  th { background: var(--accent-soft); color: var(--accent); font-weight: 700; }
+  tr:nth-child(even) td { background: #fbfcfe; }
+
+  /* KOD FOLDERA */
+  pre.code {
+    background: #0f222b; color: #c9e6f2; border-radius: 10px;
+    padding: 16px 18px; overflow-x: auto; font-size: 13px; line-height: 1.5;
+  }
+  pre.code .c { color: #7fa3b3; } /* komentar */
+  pre.code .d { color: #ffd47e; } /* dir */
+  pre.code .f { color: #9edeff; } /* file */
+
+  ul.clean { margin: 6px 0 0; padding-left: 20px; }
+  .foot {
+    margin-top: 34px; text-align: center; color: var(--muted);
+    font-size: 13px; border-top: 1px solid var(--border); padding-top: 16px;
+  }
+  @media (max-width: 640px) { .grid2 { grid-template-columns: 1fr; } }
+</style>
+</head>
+<body>
+<div class="wrap">
+
+  <header class="hero">
+    <h1>Plan rada — Intrusion Detection System (IDS) za zaštitu CAN komunikacije</h1>
+    <p>Diplomski rad · Automobilski informacioni sistemi · Automotive Cybersecurity</p>
+    <p style="font-size:14px;">Direktno usklađen sa strukturom pisanog dela rada (Word dokument)</p>
+    <span class="chip">Fokus: javni Car-Hacking dataset · Praktični doprinos na kraju (ESP32 + auto)</span>
+  </header>
+
+  <!-- TEME -->
+  <h2 class="section">1. Osnovna tema i cilj</h2>
+  <div class="card">
+    <p style="margin-top:0;"><strong>Suština:</strong> CAN protokol nema ugrađenu autentifikaciju ni enkripciju, pa zlonameran saobraćaj može da uđe u mrežu. Rad istražuje kako napraviti <strong>IDS</strong> koji prati CAN saobraćaj, prepoznaje anomalije/napade i reaguje.</p>
+    <p><strong>Istraživačko pitanje:</strong> <em>„Da li se jednostavan i objašnjiv IDS može koristiti za pouzdanu detekciju anomalija u CAN komunikaciji uz dovoljno malu latenciju za primenu u automobilskim sistemima?"</em></p>
+    <p><strong>Tok:</strong> problem → ranjivosti → postojeći pristupi → implementacija i testiranje → poređenje tačnosti i performansi → predlog za <em>lightweight / realtime</em> IDS.</p>
+  </div>
+
+  <!-- MAPA -->
+  <h2 class="section">2. Mapa: tehnički rad → poglavlja diplomskog</h2>
+  <div class="card">
+    <table>
+      <thead>
+        <tr><th>Tehnički korak</th><th>Poglavlje rada</th></tr>
+      </thead>
+      <tbody>
+        <tr><td>Teorija: CAN frejm, ECU, hijerarhija mreža, topologije</td><td><strong>2.</strong> Arhitektura komunikacionih sistema u vozilima</td></tr>
+        <tr><td>Ranjivosti dizajna, klasifikacija i tipovi napada, vektori ulaza</td><td><strong>3.</strong> Analiza ranjivosti CAN protokola</td></tr>
+        <tr><td>Definicija IDS-a, arhitektura, metode anomalija, parametri CAN-a, ML</td><td><strong>4.</strong> Intrusion Detection Sistemi (IDS)</td></tr>
+        <tr><td>Pisanje koda: EDA, feature ekstrakcija, modeli</td><td><strong>5.</strong> Predloženo rešenje / Implementacija</td></tr>
+        <tr><td>Metrike, poređenje pristupa, grafici, latencija</td><td><strong>6.</strong> Rezultati i evaluacija</td></tr>
+        <tr><td>Odgovor na istraživačko pitanje + predlog</td><td><strong>7.</strong> Zaključak</td></tr>
+        <tr><td>Praktični demo (ESP32 + SN65HVD230 + auto)</td><td><strong>1.2.</strong> Doprinos rada</td></tr>
+        <tr><td>Uvod, ciljevi, struktura (piše se na kraju)</td><td><strong>1.</strong> Uvod</td></tr>
+      </tbody>
+    </table>
+  </div>
+
+  <!-- PLAN 3 DANA -->
+  <h2 class="section">3. Plan rada — 3 dana jakog rada</h2>
+
+  <div class="card day">
+    <div class="dayhead">📘 Dan 1 — Teorija + okruženje + EDA <span class="tag">pogl. 2, 3, 4</span></div>
+    <ol>
+      <li>Postavka okruženja: Python venv, instalacije (<code>pandas, numpy, scikit-learn, python-can, matplotlib</code>).</li>
+      <li>Preuzimanje Car-Hacking dataset-a: <code>normal + DoS, fuzzy, spoofing, replay</code>.</li>
+      <li>Teorijske tačke za pogl. 2 i 3 (CAN frejm, ECU, tipovi napada) — direktno u rad.</li>
+      <li>EDA: struktura csv-a, ključni ID-ovi, frekvencije, delta-t, raspodele.</li>
+      <li>Vizuelizacije (matplotlib) — idu u pogl. 4.4 / 6.</li>
+    </ol>
+  </div>
+
+  <div class="card day day2">
+    <div class="dayhead">⚙️ Dan 2 — Feature ekstrakcija + modeli <span class="tag">pogl. 5, 6</span></div>
+    <ol>
+      <li>Feature extraction: Arbitration ID, DLC, payload (bajtovi 0–7), delta-t, windowing po ID-u.</li>
+      <li>Rule-based detekcija (novi ID, prekoračena frekvencija, prevelik DLC).</li>
+      <li>Statistička / anomaly detekcija (z-score, razlika delta-t po ID-u).</li>
+      <li>ML — Isolation Forest (anomaly detekcija).</li>
+      <li>ML — Random Forest (klasifikacija poznatih napada).</li>
+    </ol>
+  </div>
+
+  <div class="card day day3">
+    <div class="dayhead">📊 Dan 3 — Evaluacija + zaključak + pisanje rada <span class="tag">pogl. 6, 7</span></div>
+    <ol>
+      <li>Metrike: accuracy, precision, recall, F1, FPR + confusion matrix.</li>
+      <li>Tabela poređenja pristupa + grafici (ROC, preciznost, latencija).</li>
+      <li>Zaključak: odgovor na istraživačko pitanje, predlog za lightweight/realtime IDS.</li>
+      <li>Šabloni poglavlja (teorija iz dana 1 + rezultati iz dana 2–3).</li>
+    </ol>
+  </div>
+
+  <div class="card day" style="border-left-color:var(--bonus);">
+    <div class="dayhead" style="color:var(--bonus);">🎓 + Bonus — Lični doprinos (ako stignemo) <span class="tag" style="background:#e5f2e5;color:var(--bonus);">pogl. 1.2</span></div>
+    <ul class="clean">
+      <li>ESP32 + SN65HVD230 transceiver na OBD2 portu VW Pola 6R.</li>
+      <li>Firmware: TWAI drajver + SLCAN/LAWICEL protokol (preko USB serije).</li>
+      <li>Python: čitanje, filtriranje ID-jeva, spoofing komande (zaključavanje auta).</li>
+      <li>Provera da li ML radi na live saobraćaju — kao lični doprinos.</li>
+    </ul>
+  </div>
+
+  <!-- TIMELINE -->
+  <h2 class="section">4. Vremenska skica / plan prioriteta (ukoliko je rok čvrst)</h2>
+  <div class="grid2">
+    <div class="card" style="border-top:4px solid var(--day1);">
+      <h3 style="margin-top:0;">Optimalan scenario</h3>
+      <ul class="clean">
+        <li>Dan 1: okruženje + dataset + teorija → rad</li>
+        <li>Dan 2: feature + oba ML modela</li>
+        <li>Dan 3: evaluacija + zaključak + šabloni rada</li>
+      </ul>
+    </div>
+    <div class="card" style="border-top:4px solid var(--bonus);">
+      <h3 style="margin-top:0;">Realna procena</h3>
+      <ul class="clean">
+        <li>Tehnički IDS (AI) deo: <strong>~1.5–2 dana</strong></li>
+        <li>Pravl auto / reverse engineering: <strong>varijabilno (rizik)</strong></li>
+        <li>Pisanje rada: <strong>dodatnih 3–5 dana</strong></li>
+        <li><em>3 dana je realno samo za tehnički demo na datasetu.</em></li>
+      </ul>
+    </div>
+  </div>
+
+  <!-- STRUKTURA PROJEKTA -->
+  <h2 class="section">5. Predložena struktura projekta</h2>
+  <pre class="code">Prakticna istrazivanja/
+├── <span class="d">rad/</span>                        <span class="c"># struktura pisanog dela (Word)</span>
+├── <span class="d">data/</span>                       <span class="c"># Car-Hacking dataset csv fajlovi</span>
+├── <span class="d">src/</span>
+│   ├── <span class="f">01_eda.py</span>              <span class="c"># istraživanje podataka + vizuelizacije</span>
+│   ├── <span class="f">02_features.py</span>        <span class="c"># feature extraction</span>
+│   ├── <span class="f">03_rule_based.py</span>      <span class="c"># rule-based detekcija</span>
+│   ├── <span class="f">04_statistical.py</span>     <span class="c"># statistička / anomaly detekcija</span>
+│   ├── <span class="f">05_ml_isolation_forest.py</span> <span class="c"># ML anomalija</span>
+│   ├── <span class="f">06_ml_random_forest.py</span>   <span class="c"># ML klasifikacija</span>
+│   └── <span class="f">07_evaluation.py</span>     <span class="c"># metrike + tabele + grafici</span>
+├── <span class="d">results/</span>                   <span class="c"># grafici, tabele metrika</span>
+└── <span class="d">documents/</span>                <span class="c"># skice poglavlja, reference</span></pre>
+
+  <!-- POREĐENJE -->
+  <h2 class="section">6. Okvir za poređenje pristupa (za rad)</h2>
+  <div class="card">
+    <table>
+      <thead>
+        <tr><th>Pristup</th><th>Prednost</th><th>Mana</th></tr>
+      </thead>
+      <tbody>
+        <tr><td><strong>Rule-based</strong></td><td>Brz i lako objašnjiv</td><td>Teško otkriva nove napade</td></tr>
+        <tr><td><strong>Statistička / anomaly</strong></td><td>Relativno jednostavan</td><td>Može imati lažne pozitive (FPR)</td></tr>
+        <tr><td><strong>Isolation Forest</strong></td><td>Dobra detekcija anomalija</td><td>Potrebno podešavanje parametara</td></tr>
+        <tr><td><strong>Random Forest</strong></td><td>Dobra klasifikacija poznatih napada</td><td>Zahteva označene podatke</td></tr>
+      </tbody>
+    </table>
+  </div>
+
+  <div class="foot">
+    Plan rada · Diplomski — <strong>IDS za zaštitu CAN komunikacije</strong> · Generisano za nastavak rada.
+  </div>
+
+</div>
+</body>
+</html>

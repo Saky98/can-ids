@@ -1,0 +1,272 @@
+:root {
+  font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif;
+  color-scheme: dark;
+
+  --bg-0: #0d1117;
+  --bg-1: #161b22;
+  --bg-2: #1f2630;
+  --border: #30363d;
+  --text-0: #e6edf3;
+  --text-1: #9ba7b4;
+  --text-2: #6e7681;
+  --accent: #58a6ff;
+  --accent-soft: rgba(88, 166, 255, 0.12);
+  --green: #3fb950;
+  --orange: #d29922;
+  --red: #f85149;
+  --purple: #bc8cff;
+  --cyan: #39c5cf;
+
+  line-height: 1.6;
+  font-size: 16px;
+}
+
+* {
+  box-sizing: border-box;
+  margin: 0;
+  padding: 0;
+}
+
+html, body, #root {
+  min-height: 100vh;
+}
+
+body {
+  background: var(--bg-0);
+  color: var(--text-0);
+}
+
+a {
+  color: var(--accent);
+  text-decoration: none;
+}
+
+a:hover {
+  text-decoration: underline;
+}
+
+/* ============ Layout ============ */
+.app {
+  display: flex;
+  flex-direction: column;
+  min-height: 100vh;
+}
+
+.app-header {
+  border-bottom: 1px solid var(--border);
+  background: var(--bg-1);
+  padding: 0 24px;
+  height: 56px;
+  display: flex;
+  align-items: center;
+  gap: 20px;
+  position: sticky;
+  top: 0;
+  z-index: 100;
+}
+
+.brand {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  font-weight: 700;
+  font-size: 15px;
+  letter-spacing: 0.02em;
+}
+
+.brand-logo {
+  width: 28px;
+  height: 28px;
+  border-radius: 7px;
+  background: linear-gradient(135deg, var(--accent), var(--purple));
+  display: grid;
+  place-items: center;
+  font-weight: 800;
+  color: #0d1117;
+  font-size: 14px;
+}
+
+.app-nav {
+  display: flex;
+  gap: 4px;
+}
+
+.nav-link {
+  padding: 6px 12px;
+  border-radius: 6px;
+  color: var(--text-1);
+  font-size: 13.5px;
+  font-weight: 500;
+}
+
+.nav-link:hover {
+  color: var(--text-0);
+  background: var(--bg-2);
+  text-decoration: none;
+}
+
+.nav-link.active {
+  color: var(--accent);
+  background: var(--accent-soft);
+}
+
+.app-main {
+  flex: 1;
+  padding: 28px 32px;
+  max-width: 1200px;
+  width: 100%;
+  margin: 0 auto;
+}
+
+.page {
+  animation: fadeIn 0.25s ease;
+}
+
+@keyframes fadeIn {
+  from { opacity: 0; transform: translateY(4px); }
+  to { opacity: 1; transform: none; }
+}
+
+.app-footer {
+  border-top: 1px solid var(--border);
+  background: var(--bg-1);
+  padding: 14px 24px;
+  color: var(--text-2);
+  font-size: 12.5px;
+  text-align: center;
+}
+
+/* ============ Typography / Headings ============ */
+.page-title {
+  font-size: 24px;
+  font-weight: 700;
+  margin-bottom: 4px;
+}
+
+.page-subtitle {
+  color: var(--text-1);
+  font-size: 14.5px;
+  margin-bottom: 24px;
+}
+
+h2.section {
+  font-size: 16px;
+  font-weight: 650;
+  margin: 28px 0 12px;
+  color: var(--text-0);
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+h2.section::after {
+  content: "";
+  flex: 1;
+  height: 1px;
+  background: var(--border);
+}
+
+/* Flash / highlight animation for fields scrolled to from the diagram */
+@keyframes fieldFlash {
+  0%   { background: rgba(88, 166, 255, 0.15); }
+  25%  { background: rgba(88, 166, 255, 0.45); }
+  100% { background: transparent; }
+}
+tr.flash td {
+  animation: fieldFlash 1.2s ease-out;
+}
+
+/* ============ Cards ============ */
+.card {
+  background: var(--bg-1);
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  padding: 18px 20px;
+}
+
+.card h3 {
+  font-size: 14.5px;
+  font-weight: 650;
+  margin-bottom: 14px;
+}
+
+/* ============ Tables ============ */
+table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 13.5px;
+}
+
+thead th {
+  text-align: left;
+  font-size: 11.5px;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  color: var(--text-2);
+  font-weight: 600;
+  padding: 8px 10px;
+  border-bottom: 1px solid var(--border);
+}
+
+tbody td {
+  padding: 8px 10px;
+  border-bottom: 1px solid rgba(48, 54, 61, 0.5);
+  vertical-align: top;
+}
+
+tbody tr:hover {
+  background: rgba(88, 166, 255, 0.03);
+}
+
+/* ============ Badges / mono ============ */
+.mono {
+  font-family: 'SF Mono', 'Fira Code', 'JetBrains Mono', Consolas, monospace;
+  font-size: 12.5px;
+}
+
+.badge {
+  display: inline-block;
+  padding: 1px 8px;
+  border-radius: 999px;
+  font-size: 11px;
+  font-weight: 600;
+}
+
+.badge.blue { background: var(--accent-soft); color: var(--accent); }
+.badge.green { background: rgba(63, 185, 80, 0.14); color: var(--green); }
+.badge.orange { background: rgba(210, 153, 34, 0.14); color: var(--orange); }
+.badge.red { background: rgba(248, 81, 73, 0.14); color: var(--red); }
+.badge.gray { background: var(--bg-2); color: var(--text-1); }
+
+/* ============ Pagination / misc ============ */
+.legend {
+  color: var(--text-2);
+  font-size: 12.5px;
+  margin-top: 10px;
+  line-height: 1.5;
+}
+
+.heat {
+  display: inline-flex;
+  gap: 3px;
+}
+
+.heat span {
+  min-width: 22px;
+  height: 20px;
+  padding: 0 3px;
+  border-radius: 4px;
+  background: var(--bg-2);
+  border: 1px solid var(--border);
+  color: var(--text-1);
+  display: grid;
+  place-items: center;
+  font-family: 'SF Mono', monospace;
+  font-size: 11px;
+}
+
+.heat span.hi {
+  color: var(--accent);
+  border-color: var(--accent);
+  background: var(--accent-soft);
+}

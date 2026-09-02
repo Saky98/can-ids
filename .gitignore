@@ -1,0 +1,14 @@
+# --- Dependencies / build artifacts ---
+node_modules/
+frontend/dist/
+.venv/
+__pycache__/
+*.pyc
+.DS_Store
+
+# --- Dataset (large, ~GB) — NOT stored in Git ---
+dataset /
+
+# --- Editors / OS ---
+.vscode/
+.idea/
