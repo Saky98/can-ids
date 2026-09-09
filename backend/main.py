@@ -18,8 +18,13 @@ import os
 import glob
 import numpy as np
 import pandas as pd
-from fastapi import FastAPI, Query
+from fastapi import FastAPI, Query, WebSocket, WebSocketDisconnect
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import FileResponse
+
+# Unified live/sim message stream (Simulator replay + future Live/ESP32).
+from stream import run_sim
+from recorder import list_sessions, session_path, REC_DIR
 
 APP_DIR = os.path.dirname(__file__)
 DATA_DIR = os.path.join(APP_DIR, "..", "dataset ", "normalized")
@@ -71,7 +76,7 @@ def _has_header(path):
 
 
 def detect_header_cols(path):
-    """Vraća Tajni nazive kolona ako fajl ima zaglavlje."""
+    """Return the actual column names from the header if the file has one."""
     with open(path) as f:
         first = f.readline().strip()
     if first.startswith("Timestamp"):
@@ -177,3 +182,72 @@ def rows(label: str = Query("normal"), limit: int = Query(100, le=2000),
             "label": str(r["Label"]),
         })
     return {"rows": recs, "total_match": len(df)}
+
+
+@app.websocket("/ws/stream")
+async def ws_stream(websocket: WebSocket, source: str = Query("sim"),
+                    label: str = Query("normal"), speed: float = Query(25.0)):
+    """Unified live bus stream.
+
+    source=sim : replay a normalized CSV recording at wall-clock pace.
+    source=live: (future) read from ESP32/socketcan.
+
+    All sources speak the SAME frame protocol so the React UI doesn't care.
+    """
+    await websocket.accept()
+    try:
+        if source == "sim":
+            await run_sim(websocket, label, speed)
+        elif source == "live":
+            # PROVISIONAL: until the ESP32/socketcan reader lands, the "live"
+            # tab plays a recorded label at wall-clock pace so the recorder and
+            # UI can be built/tested against a moving stream. Replacing the
+            # body with a real socketcan reader later changes nothing upstream.
+            await run_sim(websocket, label or "normal", speed, source="live")
+        else:
+            await websocket.send_json({
+                "type": "error",
+                "error": f"unsupported source '{source}' (only 'sim'/'live' for now)",
+            })
+    except WebSocketDisconnect:
+        pass
+    except Exception:
+        # sink exceptions; the socket either closed or is being torn down
+        pass
+
+
+@app.get("/api/recordings")
+def recordings():
+    """List recorded capture sessions (newest first)."""
+    return {"sessions": list_sessions()}
+
+
+@app.get("/api/recordings/download")
+def recordings_download(token: str = Query(""), kind: str = Query("csv")):
+    """Download one file of a recorded session.
+
+    kind = csv | log | meta (one file per HTTP response; the UI offers both
+    'csv' and 'log' buttons which call this endpoint separately).
+    """
+    media = {"csv": ("text/csv", ".csv"),
+             "log": ("text/plain", ".log"),
+             "meta": ("application/json", ".meta.json")}.get(kind.lower())
+    if not media:
+        return {"error": "unsupported kind"}
+    p = session_path(token, "meta.json" if kind.lower() == "meta" else kind.lower())
+    if not os.path.exists(p):
+        return {"error": f"session file not found: {os.path.basename(p)}"}
+    mime, ext = media
+    return FileResponse(p, media_type=mime, filename=os.path.basename(p))
+
+
+@app.get("/api/recordings/delete")
+def recordings_delete(token: str = Query("")):
+    """Delete a recorded session (all its files)."""
+    removed = []
+    for ext in ("csv", "log", "meta.json"):
+        p = session_path(token, ext)
+        if os.path.exists(p):
+            os.remove(p)
+            removed.append(ext)
+    return {"removed": removed}

@@ -11,6 +11,13 @@ export default defineConfig({
         target: 'http://127.0.0.1:8000',
         changeOrigin: true,
       },
+      // Proxy the unified CAN stream WebSocket to the FastAPI backend too,
+      // so the browser can connect to ws://localhost:<vite>/ws/stream.
+      '/ws': {
+        target: 'ws://127.0.0.1:8000',
+        ws: true,
+        changeOrigin: true,
+      },
     },
   },
 })

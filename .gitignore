@@ -16,3 +16,4 @@ dataset /
 # --- Docs not tracked in Git (local only) ---
 plan_rada.html
 reference /*.pdf
+*.docx
