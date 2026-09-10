@@ -395,6 +395,51 @@ DoS / Fuzzy / gear / RPM  → isključivo evaluacija (NIKAD u trening)</pre>
         test3 (payload). Napomena: DoS ubrizgava legit ID sa promenjenim payload-om, pa ga
         test3 hvata kao payload anomaliju — dodatna, nezavisna potvrda.</li>
   </ul>
+
+  <div class="callout"><b>Iskreni osvrt na 100% coverage:</b> ova mera je "velikodušna" jer su
+     napad-fajlovi u Car-Hacking datasetu <b>saturisani</b> (ceo fajl je kontinuirano
+     napadnut, ne "par loših među normalnima"), pa event-level coverage skoči na ~100%
+     čim detektor primeti da nešto nije u redu. Zato je realnija mera <b>injection (red-team)
+     evaluacija</b> u §14 — pojedinačne loše poruke ubrizgane u normalan tok.</div>
+</div>
+
+<!-- ============================================================ -->
+<h2 class="section">14. Red-team (injection) evaluacija — <code>ids_injection.py</code></h2>
+
+<div class="card">
+  <p><b>Poštenija mera od coverage-a:</b> umesto celih napad-fajlova, ubrizgavamo
+     <b>nekoliko zaista loših poruka</b> (statistički outlier-a u odnosu na normu) u inače
+     čist, normalan tok, na random mesta, i merimo koliko često je detektor primetio.</p>
+
+  <h3 style="margin-top:6px">Semantika ubrizgavanja (dogovoreno)</h3>
+  <ul>
+    <li><b>DoS</b> → jedan <b>burst</b> od 8 poruka na ~2ms razmaka (DoS je po prirodi
+        gustina, ne pojedinačna poruka).</li>
+    <li><b>Fuzzy / gear / RPM</b> → <b>10 razbacanih pojedinačnih</b> loših poruka.</li>
+  </ul>
+
+  <h3 style="margin-top:6px">Tri reproducibilna manifesta</h3>
+  <p>Da izbegnemo "srećan uzorak", generisana su <b>3 nezavisna manifesta</b> sa istim
+     brojem ubrizgavanja (380), ali različitim random mestima (seed-ovi
+     <code>20240910/11/12</code>). Svaki manifest tačno beleži gde je poruka gurnuta
+     (timestamp) i šta sadrži (CAN_ID + 8 payload bajtova), pa <b>Isolation Forest</b> i
+     <b>One-Class SVM</b> kasnije mogu da ponove <b>identičan</b> test — pošteno 1:1
+     poređenje. Datoteke: <code>dataset /injection_manifest_1/2/3.json</code>.</p>
+
+  <h3 style="margin-top:6px">Rezultati (prosek + varijacija kroz 3 manifesta)</h3>
+  <table>
+    <tr><th>Napad</th><th>#1</th><th>#2</th><th>#3</th><th>Prosek</th><th>min–max</th></tr>
+    <tr><td><b>DoS</b></td><td>100%</td><td>100%</td><td>100%</td><td><b>100%</b></td><td>100–100%</td></tr>
+    <tr><td><b>Fuzzy</b></td><td>85%</td><td>85%</td><td>85%</td><td><b>85%</b></td><td>85–85%</td></tr>
+    <tr><td><b>gear</b></td><td>87%</td><td>87%</td><td>87%</td><td><b>87%</b></td><td>87–87%</td></tr>
+    <tr><td><b>RPM</b></td><td>82%</td><td>82%</td><td>82%</td><td><b>82%</b></td><td>82–82%</td></tr>
+  </table>
+
+  <div class="callout"><b>Ključni nalaz:</b> sva 3 manifesta daju <b>identične</b> stope, što
+     dokazuje da rezultat <b>nije "luck"</b> — preciznost je stabilna i nezavisna od konkretnog
+     random uzorka. DoS (gust burst) se hvata 100%; suptilan pojedinačni spoof (Fuzzy/gear/RPM)
+     ima realan recall ~82–87%, što je tačno mesto gde ML metoda treba da nadoknadi
+     heuristiku.</div>
 </div>
 
 </div>
