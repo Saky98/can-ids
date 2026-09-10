@@ -59,6 +59,20 @@ MAX_SPEED = 10000.0
 BATCH = 200            # rows per outbound message frame
 SS = 0.05              # async sleep quantum -> responsive pause/restart
 
+IDS_METHODS = ("heuristic", "isolation_forest", "one_class_svm", "off")
+
+
+def _make_ids_engine(method: str):
+    """Lazily build the chosen IDS engine (heavy: loads a model + clean baseline).
+
+    Returns None for 'off'. Import is deferred so the normal (no-IDS) path stays
+    lightweight and never touches the ML stack.
+    """
+    if not method or method == "off":
+        return None
+    from ids.ids_runtime import IdsEngine
+    return IdsEngine(method)
+
 
 def _norm_hex(v) -> str:
     v = (v or "").strip().lower()
@@ -126,7 +140,7 @@ def iter_batches(label: str, speed: float) -> Iterator[tuple[list[dict], float]]
 class SimSession:
     """Playback state for a single simulator WebSocket connection."""
 
-    def __init__(self, label: str, speed: float):
+    def __init__(self, label: str, speed: float, ids_method: str = "off"):
         self.label = label
         self.speed = SimSession.clamp(speed)
         self.run = 0
@@ -138,6 +152,13 @@ class SimSession:
         self.recording = None            # Recorder when active
         self.rec_ev = asyncio.Event()    # set when command change is pending
         self.rec_act = None              # ('start'{..}|'stop') pending intent
+        # IDS + injection (owned by the play loop; inbound *requests* via inj_ev)
+        self.ids_method = ids_method if ids_method in IDS_METHODS else "off"
+        self.engine = None               # IdsEngine when ids_method != 'off'
+        self.ids_ready = False
+        self.inj_ev = asyncio.Event()    # set when an inject command is pending
+        self.inj_attack = None           # pending attack label ('DoS'|...)
+        self.last_ts = 0.0               # last replayed timestamp (inject anchor)
 
     @staticmethod
     def clamp(s):
@@ -158,6 +179,11 @@ class SimSession:
             self.resume.set()          # wake a paused sleeper immediately
         elif cmd == "speed":
             self.speed = self.clamp(msg.get("speed"))
+        elif cmd == "inject":
+            attack = (msg.get("attack") or "").strip()
+            if attack in ("DoS", "Fuzzy", "gear", "RPM"):
+                self.inj_attack = attack
+                self.inj_ev.set()
         elif cmd in ("record_start", "record_stop"):
             # playback loop owns recorder: just request a state change
             self.rec_act = (
@@ -166,6 +192,16 @@ class SimSession:
             )
             self.rec_ev.set()
             self.resume.set()          # if paused, proceed so recorder can tick
+
+    # --- IDS / inject: owned by the playback loop ---
+    def inj_intent(self):
+        """Return a pending attack label, else None (consumes the event)."""
+        if self.inj_ev.is_set():
+            attack = self.inj_attack
+            self.inj_ev.clear()
+            self.inj_attack = None
+            return attack
+        return None
 
     # --- owned by the playback loop (only caller) ---
     def rec_intent(self):
@@ -254,15 +290,32 @@ async def _sleep_wall(session, seconds: float):
         remaining -= step
 
 
-async def run_sim(ws, label: str, speed: float, source: str = "sim"):
+async def run_sim(ws, label: str, speed: float, source: str = "sim",
+                  ids_method: str = "off"):
     """Serve a simulator/live replay until the client disconnects or errors.
 
     `source` is recorded in capture metadata so a recording made from the live
     tab is tagged 'live', one from the simulator tab 'sim'.
+    `ids_method` selects the inline detector: 'heuristic' | 'isolation_forest'
+    | 'one_class_svm' | 'off'. Each replayed frame is scored per-frame; blocked
+    frames are marked and injected attacks are flagged as they land on the bus.
     """
-    session = SimSession(label or "normal", speed)
+    session = SimSession(label or "normal", speed, ids_method)
     capture_source = source
     reader = asyncio.create_task(_inbound(ws, session))
+
+    # Lazily build the IDS engine (heavy: model load + clean baseline). Doing it
+    # inline (not lazily per frame) keeps scoring fast and atomic.
+    if session.ids_method != "off":
+        try:
+            session.engine = _make_ids_engine(session.ids_method)
+            session.ids_ready = session.engine is not None
+        except Exception as exc:
+            session.ids_ready = False
+            await ws.send_text(json.dumps({
+                "type": "error",
+                "error": f"cannot load IDS '{session.ids_method}': {exc}",
+            }))
 
     try:
         while not session.closed:
@@ -277,6 +330,8 @@ async def run_sim(ws, label: str, speed: float, source: str = "sim"):
                 "label": session.label,
                 "speed": session.speed,
                 "run": session.run,
+                "ids": session.ids_method,
+                "ids_ready": session.ids_ready,
             }))
 
             gen = iter_batches(session.label, session.speed)
@@ -293,6 +348,10 @@ async def run_sim(ws, label: str, speed: float, source: str = "sim"):
                     # forward to the wire AND (optionally) the recorder
                     if session.recording is not None:
                         session.rec_tick(batch)
+
+                    # inline IDS: score every replayed frame per-frame
+                    _score_batch(session, batch)
+
                     sent += len(batch)
                     tps = sent / max(time.time() - t_start, 1e-6)
                     await ws.send_text(json.dumps({
@@ -301,8 +360,13 @@ async def run_sim(ws, label: str, speed: float, source: str = "sim"):
                         "tps": round(tps, 1),
                         "done": sent,
                     }))
+
                     # honour control intents (record start/stop) queued meanwhile
                     await _recorder_drain(ws, session, source=capture_source)
+
+                    # inject any pending attack at the current bus position
+                    await _drain_inject(ws, session)
+
             except FileNotFoundError:
                 await ws.send_text(json.dumps(
                     {"type": "error", "error": f"unknown label: {session.label}"}))
@@ -344,3 +408,54 @@ async def run_sim(ws, label: str, speed: float, source: str = "sim"):
             await reader
         except (asyncio.CancelledError, Exception):
             pass
+
+
+def _score_batch(session: SimSession, batch: list[dict]) -> None:
+    """Inline per-frame IDS scoring of a replay batch (mutates items)."""
+    eng = session.engine
+    if eng is None:
+        for it in batch:
+            session.last_ts = it.get("ts")
+        return
+    for it in batch:
+        session.last_ts = it.get("ts")
+        v = eng.check_hex(it.get("hex"), it.get("ts"), it.get("payload"))
+        it["blocked"] = bool(v["block"])
+        it["reason"] = v["reason"]
+        it["score"] = v["score"]
+        it["injected"] = False
+
+
+async def _drain_inject(ws, session: SimSession) -> None:
+    """Inject any pending attack (if IDS is active), score it, and emit it.
+
+    Injected frames are emitted as their own 'messages' batch with injected=True
+    so the UI can render them red and record blocked ones into quarantine.
+    """
+    attack = session.inj_intent()
+    if not attack:
+        return
+    eng = session.engine
+    if eng is None:
+        return
+    # bus position = last replayed ts of this run (fall back to 0)
+    now = session.last_ts if getattr(session, "last_ts", None) else 0.0
+    frames = eng.inject(attack, now)
+    if not frames:
+        return
+    for fr in frames:
+        fr["blocked"] = False
+    if eng is not None:
+        for fr in frames:
+            v = eng.check_hex(fr["hex"], fr["ts"], fr["payload"])
+            fr["blocked"] = bool(v["block"])
+            fr["reason"] = v["reason"]
+            fr["score"] = v["score"]
+    await ws.send_text(json.dumps({
+        "type": "messages",
+        "items": frames,
+        "tps": None,
+        "done": None,
+        "injected": True,
+        "attack": attack,
+    }))

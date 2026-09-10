@@ -195,24 +195,29 @@ def rows(label: str = Query("normal"), limit: int = Query(100, le=2000),
 
 @app.websocket("/ws/stream")
 async def ws_stream(websocket: WebSocket, source: str = Query("sim"),
-                    label: str = Query("normal"), speed: float = Query(25.0)):
+                    label: str = Query("normal"), speed: float = Query(25.0),
+                    ids: str = Query("off")):
     """Unified live bus stream.
 
     source=sim : replay a normalized CSV recording at wall-clock pace.
     source=live: (future) read from ESP32/socketcan.
+    ids        : inline detector — 'heuristic'|'isolation_forest'|'one_class_svm'
+                 |'off' (default). Frames are scored per-frame and blocked ones
+                 are marked; 'inject' commands insert attacks at the bus position.
 
     All sources speak the SAME frame protocol so the React UI doesn't care.
     """
     await websocket.accept()
     try:
         if source == "sim":
-            await run_sim(websocket, label, speed)
+            await run_sim(websocket, label, speed, ids_method=ids)
         elif source == "live":
             # PROVISIONAL: until the ESP32/socketcan reader lands, the "live"
             # tab plays a recorded label at wall-clock pace so the recorder and
             # UI can be built/tested against a moving stream. Replacing the
             # body with a real socketcan reader later changes nothing upstream.
-            await run_sim(websocket, label or "normal", speed, source="live")
+            await run_sim(websocket, label or "normal", speed, source="live",
+                          ids_method=ids)
         else:
             await websocket.send_json({
                 "type": "error",

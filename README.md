@@ -79,7 +79,7 @@ The **Simulator** page replays a recorded dataset as if it came from a live bus,
 streaming frames to the browser over a unified WebSocket:
 
 ```
-UI ── ws://<host>/ws/stream?source=sim&label=<label>&speed=<n> ──> FastAPI
+UI ── ws://<host>/ws/stream?source=sim&label=<label>&speed=<n>&ids=<method> ──> FastAPI
 ```
 
 - Runs in dev with no extra setup: Vite proxies `/ws` to the backend.
@@ -91,6 +91,25 @@ UI ── ws://<host>/ws/stream?source=sim&label=<label>&speed=<n> ──> FastA
 
 Backend files: `backend/stream.py` (WebSocket replay engine) + the `/ws/stream`
 route in `backend/main.py`.
+
+### Inline IDS + attack injection (thesis demo)
+
+The Simulator page can run a **live detector inline** on the replayed stream and
+let you **inject attacks** onto the bus:
+
+- **IDS selector** (`ids=<method>`): `heuristic` / `isolation_forest` /
+  `one_class_svm` / `off`. Every replayed frame is scored per-frame; blocked
+  frames are marked and logged into a **quarantine** panel.
+- **Inject buttons** (DoS / Fuzzy / gear / RPM) push a genuine attack onto the
+  bus at the current position via `{"cmd":"inject","attack":…}` — DoS is an
+  8-frame burst (2 ms apart), the others are a single spoof frame. Injected
+  frames are rendered red; caught ones are marked "BLOCKED" and quarantined.
+- Injection payloads are drawn from the three red-team manifests
+  (`dataset /injection_manifest_*.json`), so the live demo injects the *same*
+  genuine outliers the offline evaluation used.
+
+Backend: `backend/ids/ids_runtime.py` (unified per-frame `IdsEngine`) + the
+scoring/injection hooks in `backend/stream.py`.
 
 ### Live mode & recording (capture)
 
@@ -121,7 +140,7 @@ The **Live** page shows the bus in real time and can save every received frame.
 - ✅ IDS heuristic detector (method #1) + red-team injection evaluation
 - ✅ IDS Isolation Forest detector (method #2) — global per-frame, validated on 3 manifests
 - ✅ IDS One-Class SVM detector (method #3) — global RBF, validated on 3 manifests
-- 🚧 IDS live metrics / runtime integration (in progress)
+- ✅ Inline IDS + attack injection in the Simulator (heuristic / IF / OCSVM, quarantine)
 - 🚧 Live capture hardware (ESP32 / socketcan) — planned; `source=live` is a
   dev replay bridge until then
 
