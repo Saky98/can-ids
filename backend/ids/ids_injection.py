@@ -35,11 +35,22 @@ N_SCATTERED = 10   # single bad frames per trial for Fuzzy/gear/RPM
 DoS_BURST = 8      # frames per DoS burst (density attack)
 DoS_BURST_GAP_S = 0.002  # ~2ms apart -> clearly below any natural minimum
 N_TRIALS = 10      # independent random trials per attack
-SEED = 20240910    # fixed seed -> reproducible injection placement
 
-# Where we persist the exact injection set, so the SAME test can be replayed by
-# the ML methods (Isolation Forest / One-Class SVM) later for a fair comparison.
-MANIFEST_PATH = os.path.join(os.path.dirname(DATA), "injection_manifest.json")
+# We keep THREE independent manifests (different seeds) so the final precision is
+# an AVERAGE over 3 reproducible tests, not a single possibly-lucky draw. All
+# three have the SAME number of injections; only the random placement / bad-frame
+# choice differs (each seed drives its own reproducible random stream).
+SEEDS = [20240910, 20240911, 20240912]
+
+# Where the manifests live. Named *_1/2/3.json so the ML methods can iterate them.
+_MANIFEST_DIR = os.path.dirname(DATA)
+MANIFEST_PATHS = [os.path.join(_MANIFEST_DIR, f"injection_manifest_{i}.json")
+                  for i in range(1, 4)]
+
+# Back-compat: the very first manifest (single) we made before the multi-manifest
+# refactor lived at this path; keep a pointer so nothing breaks.
+MANIFEST_PATH = MANIFEST_PATHS[0]
+SEED = SEEDS[0]
 
 
 def learn_norma():
@@ -116,14 +127,16 @@ def sample_bad(bad: pd.DataFrame, n: int, rng) -> pd.DataFrame:
     return bad.iloc[idx].reset_index(drop=True)
 
 
-def generate_manifest(norma, per, known, rng) -> list[dict]:
-    """Deterministically generate the full injection set and return it as a list
-    of records. Each record fully describes ONE injected frame so any method can
-    replay the exact same test later:
+def generate_manifest(norma, per, known, seed: int) -> list[dict]:
+    """Deterministically generate the full injection set (one manifest per seed).
+
+    Each record fully describes ONE injected frame so any method can replay the
+    exact same test later:
        {attack, trial, i, mode, timestamp, CAN_ID, B0..B7}
     'burst' records share one trial with a 'burst' flag; scatter records are each
-    their own i-th injection.
+    their own i-th injection. A fixed seed -> identical manifest every run.
     """
+    rng = np.random.default_rng(seed)
     clean = normalize_clean()
     span_lo = clean["Timestamp"].min()
     span_hi = clean["Timestamp"].max()
@@ -222,30 +235,37 @@ def _probe_insert(clean, norma, per, rec) -> int:
 
 
 def main():
-    rng = np.random.default_rng(SEED)
     norma = learn_norma()
     per, known = _norma_maps(norma)
     clean = normalize_clean()
 
-    # generate (and persist) the manifest if it does not exist yet; otherwise
-    # reuse the saved one so the test is identical across methods.
-    if os.path.exists(MANIFEST_PATH):
+    # Ensure all three manifests exist (generate any missing one with its seed).
+    # This keeps the ML comparison reproducible across the same 3 tests.
+    for path, seed in zip(MANIFEST_PATHS, SEEDS):
+        if not os.path.exists(path):
+            manifest = generate_manifest(norma, per, known, seed)
+            with open(path, "w") as f:
+                json.dump(manifest, f, indent=1)
+            print(f"Generisan manifest {os.path.basename(path)} "
+                  f"(seed={seed}, {len(manifest)} ubrizgavanja)")
+        else:
+            print(f"Manifest {os.path.basename(path)} već postoji "
+                  f"({len(load_manifest())} ubrizgavanja)")
+
+    print("\nInjection evaluation (red-team) — 3 manifesta, prosek + varijacija:\n")
+    print(f"{'napad':<6}{'#1':>7}{'#2':>7}{'#3':>7}{'prosek':>9}{'min':>7}{'max':>7}")
+    agg = {a: [] for a in ATTACKS}
+    for path in MANIFEST_PATHS:
         manifest = load_manifest()
-        print(f"Učitavam postojeći manifest: {MANIFEST_PATH}  ({len(manifest)} ubrizgavanja)")
-    else:
-        manifest = generate_manifest(norma, per, known, rng)
-        save_manifest(manifest)
-        print(f"Generisan + sačuvan manifest: {MANIFEST_PATH}  ({len(manifest)} ubrizgavanja, seed={SEED})")
+        detected, total = run_eval(clean, norma, manifest)
+        for a in ATTACKS:
+            agg[a].append(detected[a] / max(total[a], 1) * 100)
 
-    detected, total = run_eval(clean, norma, manifest)
-
-    print("\nInjection evaluation (red-team): injecting genuine bad frames into clean stream.\n")
-    print(f"{'napad':<6}{'inj/trial':>10}{'trials':>8}{'detected':>10}{'rate':>9}")
     for a in ATTACKS:
-        d = detected[a]
-        t = total[a]
-        rate = d / max(t, 1) * 100
-        print(f"{a:<6}{(DoS_BURST if a=='DoS' else N_SCATTERED):>10}{N_TRIALS:>8}{d:>10}{rate:>8.1f}%")
+        rates = agg[a]
+        avg = sum(rates) / len(rates)
+        print(f"{a:<6}{rates[0]:>6.1f}%{rates[1]:>6.1f}%{rates[2]:>6.1f}%"
+              f"{avg:>8.1f}%{min(rates):>6.1f}%{max(rates):>6.1f}%")
 
 
 if __name__ == "__main__":
