@@ -217,8 +217,7 @@ class IdsEngine:
     def _check_heuristic(self, cid: str, gap, p: np.ndarray, prev) -> dict:
         # test1: unknown ID
         if cid not in self._known:
-            return {"block": True, "reason": "unknown CAN-ID",
-                    "score": float("nan")}
+            return {"block": True, "reason": "unknown CAN-ID", "score": None}
         row = self._per[cid]
 
         # test2: burst (gap below natural floor)
@@ -227,7 +226,7 @@ class IdsEngine:
             if pmin is not None and not (isinstance(pmin, float) and np.isnan(pmin)) \
                     and pmin > 0 and gap < pmin * BURST_MIN_FRAC:
                 return {"block": True, "reason": f"burst ({gap*1e3:.2f}ms < nominal)",
-                        "score": float("nan")}
+                        "score": None}
 
         # test3: payload (static out-of-range / drift over-step) — per-frame
         for i in range(8):
@@ -241,7 +240,7 @@ class IdsEngine:
                 if v < lo or v > hi:
                     return {"block": True,
                             "reason": f"byte{i} out-of-range ({v} ∉ [{lo:.0f},{hi:.0f}])",
-                            "score": float("nan")}
+                            "score": None}
             elif cls == "drift":
                 mx = getattr(row, f"byte{i}_maxstep", 0)
                 if mx is None or (isinstance(mx, float) and np.isnan(mx)):
@@ -251,15 +250,15 @@ class IdsEngine:
                     if step > mx * DRIFT_MARGIN:
                         return {"block": True,
                                 "reason": f"byte{i} step {step} > {DRIFT_MARGIN:.0f}×max",
-                                "score": float("nan")}
-        return {"block": False, "reason": "", "score": float("nan")}
+                                "score": None}
+        return {"block": False, "reason": "", "score": None}
 
     def _check_ml(self, cid: str, gap, p: np.ndarray) -> dict:
         row = self._per.get(cid)
         # out-of-band unknown-ID rule (mirrors the offline pipeline's unknown_mask):
         # a foreign CAN_ID has no baseline and is anomalous by definition.
         if row is None:
-            return {"block": True, "reason": "unknown CAN-ID", "score": float("nan")}
+            return {"block": True, "reason": "unknown CAN-ID", "score": None}
         f = _frame_features(p, gap, row)
         vec = np.array([[f[k] for k in FEATURES]], dtype=float)
         if self.method == "isolation_forest":
