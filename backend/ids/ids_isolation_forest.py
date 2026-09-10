@@ -96,6 +96,17 @@ OVER_THRESH = 2.0
 FEATURES = ["gap_z", "max_abs_z", "n_over_2"]
 
 
+def _parse_hex_matrix(df: pd.DataFrame) -> np.ndarray:
+    """Parse the 8 payload hex-string columns to an (N, 8) int64 matrix.
+
+    Vectorized via np.frompyfunc (a single C-level pass) instead of the slow
+    per-cell pandas .map(_parse_hex_byte) — that pure-Python map dominated the
+    runtime over the ~14M-frame attack files.
+    """
+    f = np.frompyfunc(_parse_hex_byte, 1, 1)
+    return f(df[BCOLS].to_numpy()).astype("int64")
+
+
 # --- baseline learning -------------------------------------------------------
 
 def learn_baseline(train: pd.DataFrame) -> pd.DataFrame:
@@ -103,7 +114,7 @@ def learn_baseline(train: pd.DataFrame) -> pd.DataFrame:
 
     Learned ONLY from clean TRAIN (never attack data).
     """
-    bts = train[BCOLS].map(_parse_hex_byte).astype("int64").to_numpy()
+    bts = _parse_hex_matrix(train)
     rows = []
     for cid, g in train.groupby("CAN_ID", sort=False):
         g = g.sort_values("Timestamp")
@@ -168,32 +179,60 @@ def extract_frame_features(df: pd.DataFrame,
     features: one row per frame with FEATURES columns.
     unknown_mask: True where the frame's CAN_ID has no baseline (foreign id);
     flagged out-of-band by the caller, not the forest.
+
+    Vectorized per CAN_ID group: gap via np.diff, per-byte z-scores via array
+    broadcasting against the baseline row, folded into max_abs_z / n_over_2.
     """
-    per, _known = _baseline_maps(baseline)
-    df = df.sort_values("Timestamp").reset_index(drop=True)
-    bts = df[BCOLS].map(_parse_hex_byte).astype("int64").to_numpy()
+    per, known = _baseline_maps(baseline)
+    df = df.sort_values("Timestamp", kind="stable").reset_index(drop=True)
+    bts = _parse_hex_matrix(df)                       # (N, 8) int64
     cids = df["CAN_ID"].astype(str).to_numpy()
     ts = df["Timestamp"].to_numpy()
     n = len(df)
 
-    data = {f: np.zeros(n) for f in FEATURES}
+    gap_z = np.zeros(n)
+    max_abs_z = np.zeros(n)
+    n_over_2 = np.zeros(n)
     unknown = np.zeros(n, dtype=bool)
-    prev_ts: dict[str, float] = {}
 
-    for i in range(n):
-        c = cids[i]
-        row = per.get(c)
-        if row is None:
-            unknown[i] = True
-            prev_ts[c] = ts[i]
+    for cid, g in df.groupby("CAN_ID", sort=False):
+        idx = g.index.to_numpy()
+        if str(cid) not in known:
+            unknown[idx] = True
             continue
-        gap = ts[i] - prev_ts[c] if c in prev_ts else None
-        f = _frame_features(bts[i], gap, row)
-        for k in FEATURES:
-            data[k][i] = f[k]
-        prev_ts[c] = ts[i]
+        row = per[str(cid)]
 
-    feat = pd.DataFrame(data)
+        # gap to previous same-ID frame (first frame has no predecessor -> gap_z 0)
+        t = g["Timestamp"].to_numpy()
+        dt = np.diff(t)
+        gap = np.empty(len(t))
+        gap[0] = np.nan
+        gap[1:] = dt
+        pm = row.period_mean
+        ps = row.period_std
+        if pm is None or np.isnan(pm) or ps is None or np.isnan(ps):
+            gz = np.zeros(len(t))
+        else:
+            gz = np.where(np.isnan(gap), 0.0,
+                          (gap - pm) / max(ps, EPS))
+
+        # per-byte z-scores vs baseline (vectorized)
+        zs = np.empty((len(t), 8))
+        for j in range(8):
+            m = getattr(row, f"byte{j}_mean")
+            s = getattr(row, f"byte{j}_std")
+            if m is None or s is None or np.isnan(m) or np.isnan(s):
+                zs[:, j] = 0.0
+            else:
+                zs[:, j] = (bts[idx, j].astype(float) - m) / max(s, EPS)
+
+        az = np.abs(zs)
+        max_abs_z[idx] = az.max(axis=1)
+        n_over_2[idx] = (az > OVER_THRESH).sum(axis=1)
+        gap_z[idx] = gz
+
+    feat = pd.DataFrame({"gap_z": gap_z, "max_abs_z": max_abs_z,
+                         "n_over_2": n_over_2})
     feat.insert(0, "can_id", cids)
     return feat, unknown
 
@@ -295,11 +334,12 @@ def _clean_stream() -> pd.DataFrame:
 def _clean_per_id(clean: pd.DataFrame):
     ts_by_id: dict[str, np.ndarray] = {}
     pay_by_id: dict[str, np.ndarray] = {}
+    bts = _parse_hex_matrix(clean)
     for cid, g in clean.groupby("CAN_ID", sort=False):
         g = g.sort_values("Timestamp")
+        idx = g.index.to_numpy()
         ts_by_id[str(cid)] = g["Timestamp"].to_numpy()
-        pay_by_id[str(cid)] = (g[BCOLS].map(_parse_hex_byte)
-                               .astype("int64").to_numpy())
+        pay_by_id[str(cid)] = bts[idx]
     return ts_by_id, pay_by_id
 
 

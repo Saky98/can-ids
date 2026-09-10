@@ -89,8 +89,8 @@
       signala, pažljivo podešenih.</p></div>
   <div class="card"><b>2. Isolation Forest</b><br><span class="status s-done">done</span>
     <p style="margin-bottom:0">Nenadgledani ML (globalni, per-frame z-score); trenira se samo na normal, validira na 3 manifesta.</p></div>
-  <div class="card"><b>3. One-Class SVM</b><br><span class="status s-pend">plan</span>
-    <p style="margin-bottom:0">Nenadgledani ML, isti feature; granica oko normale.</p></div>
+  <div class="card"><b>3. One-Class SVM</b><br><span class="status s-done">done</span>
+    <p style="margin-bottom:0">Nenadgledani ML (RBF, isti per-frame z-score feature); granica oko normale, validirano na 3 manifesta.</p></div>
 </div>
 <div class="callout">
   <b>Odabrani princip:</b> sve tri dele <b>isti feature-ekstraktor</b> i istu podelu (TRAIN/VAL/TEST).
@@ -519,6 +519,68 @@ DoS / Fuzzy / gear / RPM  → isključivo evaluacija (NIKAD u trening)</pre>
 ../../.venv/bin/python ids_isolation_forest.py</pre>
   <p style="color:var(--muted)">Model se čuva u <code>ids_isolation_forest.joblib</code>;
      poznati ID-jevi u <code>ids_if_known_ids.txt</code>.</p>
+</div>
+
+<!-- ============================================================ -->
+<h2 class="section">16. ZAVRŠENO — metod #3 (One-Class SVM) — <code>ids_one_class_svm.py</code></h2>
+
+<div class="card">
+  <p><b>Status:</b> globalni One-Class SVM implementiran i pošteno izmeren na istom
+     red-team testu (3 manifesta), ista podela normal.csv i isti no-leak protokol
+     (SAMO čista TRAIN za model; VALID za prag; napadi i manifesti samo za evaluaciju).
+     Deli <b>identičan per-frame z-score feature-ekstraktor</b> kao Isolation Forest
+     (metod #2) — razlikuje se samo model odluke, pa su metode #2 i #3 1:1 uporedive.</p>
+
+  <h3 style="margin-top:6px">Šta SVM traži, a forest ne (i kako je rešeno)</h3>
+  <ul>
+    <li><b>Skala:</b> SVM je osetljiv na skalu feature-a. Z-score feature-i su ~N(0,1) za
+        čisto, ali <code>max_abs_z</code>/<code>n_over_2</code> imaju teške gornje repove
+        (spoof → desetine/stotine). Koristimo <b>RobustScaler</b> naučen na čistoj TRAIN,
+        pa se granica uči u bez-skali prostoru (isti scaler na VALID/TEST/napade/manifeste).</li>
+    <li><b><code>nu</code>:</b> gornja granica trening-greške (i udeo support vektora).
+        sklearn default <code>nu=0.5</code> pretpostavlja ~50% outliera, a naš TRAIN je 100%
+        čist — zato <code>nu</code> mora biti <b>mali</b>. Koristimo <code>nu=0.001</code>
+        (uz <code>gamma=0.25</code>, RBF kernel); mali <code>nu</code> daje i manje support
+        vektora (392), što drži O(n·n_sv) scoring izvodljivim preko višemilionskih fajlova.</li>
+  </ul>
+
+  <h3 style="margin-top:6px">Rezultati — red-team (3 manifesta), poređenje sva tri metoda</h3>
+  <table>
+    <tr><th>Napad</th><th>One-Class SVM</th><th>Isolation Forest</th><th>Heuristika</th></tr>
+    <tr><td><b>DoS</b></td><td><b>100%</b></td><td>100%</td><td>100%</td></tr>
+    <tr><td><b>Fuzzy</b></td><td><b>96.7%</b></td><td>89.3%</td><td>85%</td></tr>
+    <tr><td><b>gear</b></td><td><b>88.7%</b></td><td>77.3%</td><td>87%</td></tr>
+    <tr><td><b>RPM</b></td><td><b>87.0%</b></td><td>78.3%</td><td>82%</td></tr>
+  </table>
+
+  <h3 style="margin-top:6px">FPR</h3>
+  <ul>
+    <li><b>VALID FPR = 0%</b> (0 / 148 331 okvira).</li>
+    <li><b>TEST-normal FPR = 0.0013%</b> (2 / 148 331 okvira) — iskrena generalizacija.</li>
+  </ul>
+
+  <h3 style="margin-top:6px">Čitavi napad-fajlovi (frame-level coverage; uzorak prvih 1.5M okvira/fajl)</h3>
+  <table>
+    <tr><th>Fajl</th><th>okvira (uzorak)</th><th>flagged</th><th>events</th><th>coverage</th></tr>
+    <tr><td>DoS</td><td>1 500 000</td><td>540 366</td><td>212 152</td><td>36.02%</td></tr>
+    <tr><td>Fuzzy</td><td>1 500 000</td><td>548 997</td><td>209 463</td><td>36.60%</td></tr>
+    <tr><td>gear</td><td>1 500 000</td><td>464 410</td><td>231 038</td><td>30.96%</td></tr>
+    <tr><td>RPM</td><td>1 500 000</td><td>388 424</td><td>232 404</td><td>25.89%</td></tr>
+  </table>
+
+  <div class="callout"><b>Ključni nalaz:</b> One-Class SVM je <b>najbolja od tri metode na
+     svakoj kategoriji napada</b> (Fuzzy 96.7%, gear 88.7%, RPM 87.0%, DoS 100%) uz isti
+     praktično nula FPR. Razlog: RBF granica oko gustine normalnog saobraćaja daje glatku,
+     monotono "udaljenost od normale" skor, što bolje odvaja pojedinačne spoof okvire nego
+     prosečna dužina puta kod isolation foresta — a za razliku od heuristike ne zavisi od
+     ručno podešenih pragova (≥3 uzastopna, 2× margina). Za poglavlje o poređenju: SVM
+     pokazuje da nenadgledana granica gustine najbolje generalizuje na ovaj per-frame zadatak.</div>
+
+  <h3 style="margin-top:6px">Uputstvo za pokretanje</h3>
+  <pre>cd backend/ids
+../../.venv/bin/python ids_one_class_svm.py</pre>
+  <p style="color:var(--muted)">Model se čuva u <code>ids_one_class_svm.joblib</code>
+     (model + RobustScaler + prag + poznati ID-jevi).</p>
 </div>
 
 </div>

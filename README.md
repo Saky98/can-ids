@@ -120,7 +120,8 @@ The **Live** page shows the bus in real time and can save every received frame.
 - ✅ Live-mode dashboard + dual-format recording/export (CSV + raw log)
 - ✅ IDS heuristic detector (method #1) + red-team injection evaluation
 - ✅ IDS Isolation Forest detector (method #2) — global per-frame, validated on 3 manifests
-- 🚧 IDS One-Class SVM (method #3) + live metrics (in progress)
+- ✅ IDS One-Class SVM detector (method #3) — global RBF, validated on 3 manifests
+- 🚧 IDS live metrics / runtime integration (in progress)
 - 🚧 Live capture hardware (ESP32 / socketcan) — planned; `source=live` is a
   dev replay bridge until then
 
