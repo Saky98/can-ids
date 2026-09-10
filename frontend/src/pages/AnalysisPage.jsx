@@ -35,7 +35,7 @@ export default function AnalysisPage() {
     (async () => {
       try {
         const [tid, dt] = await Promise.all([
-          fetch(`/api/top-ids?label=${label}&top=15`).then(r => r.json()),
+          fetch(`/api/top-ids?label=${label}`).then(r => r.json()),
           fetch(`/api/deltat?label=${label}`).then(r => r.json()),
         ]);
         setTopIds(Array.isArray(tid) ? tid : []);
@@ -148,19 +148,20 @@ export default function AnalysisPage() {
 
       {/* Table: CAN IDs + periodicity */}
       <div className="card" style={{ marginBottom: 20 }}>
-        <h3>CAN IDs — {label} (by frequency)</h3>
+        <h3>CAN IDs — {label} · {topIds.length} distinct (by frequency)</h3>
         <table>
           <thead>
             <tr>
-              <th>Hex</th><th>Decimal</th><th>Count</th><th>Share %</th>
+              <th style={{ width: 34 }}>#</th><th>Hex</th><th>Decimal</th><th>Count</th><th>Share %</th>
               <th>Period mean (ms)</th><th>Period median (ms)</th><th>Range</th>
             </tr>
           </thead>
           <tbody>
-            {topIds.map(row => {
+            {topIds.map((row, i) => {
               const dt = deltat.find(d => d.hex === row.hex);
               return (
                 <tr key={row.hex}>
+                  <td className="mono" style={{ color: 'var(--text-2)', textAlign: 'center' }}>{i + 1}</td>
                   <td className="mono" style={{ color: 'var(--accent)', fontWeight: 700 }}>{row.hex}</td>
                   <td className="mono">{row.can_id}</td>
                   <td className="mono">{row.count.toLocaleString()}</td>

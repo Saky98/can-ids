@@ -1,0 +1,402 @@
+<!DOCTYPE html>
+<html lang="sr">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Heuristika / statistika — dizajn IDS heurističke metode</title>
+<style>
+  :root {
+    --bg:#f7f9fc; --card:#fff; --ink:#1f2933; --muted:#52606d;
+    --border:#d9e2ec; --accent:#0b6e99; --accent-soft:#e3f2fb;
+    --warn:#b26a00; --warn-soft:#fff4e0; --bad:#c0392b; --good:#2e7d32;
+  }
+  *{box-sizing:border-box}
+  body{margin:0;background:var(--bg);color:var(--ink);
+    font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Helvetica,Arial,sans-serif;
+    line-height:1.6}
+  .wrap{max-width:940px;margin:0 auto;padding:32px 20px 72px}
+  header.hero{background:linear-gradient(135deg,#0b6e99,#062c3c);color:#fff;
+    border-radius:14px;padding:30px 30px;margin-bottom:26px}
+  header.hero h1{margin:0 0 6px;font-size:25px}
+  header.hero p{margin:2px 0;color:#cfe9f5}
+  .chip{display:inline-block;background:rgba(255,255,255,.16);padding:3px 12px;
+    border-radius:999px;font-size:12px;margin-top:10px;margin-right:6px}
+  h2.section{font-size:20px;margin:34px 0 12px;padding-bottom:7px;
+    border-bottom:3px solid var(--accent)}
+  h3{font-size:16px;margin:20px 0 6px}
+  .card{background:var(--card);border:1px solid var(--border);border-radius:12px;
+    padding:16px 18px;margin-bottom:14px;box-shadow:0 1px 3px rgba(15,23,42,.05)}
+  .grid2{display:grid;grid-template-columns:1fr 1fr;gap:14px}
+  .grid3{display:grid;grid-template-columns:repeat(3,1fr);gap:12px}
+  @media(max-width:760px){.grid2,.grid3{grid-template-columns:1fr}}
+  code{background:#eef3f8;padding:1px 5px;border-radius:5px;font-size:.92em;
+    color:#07485f;font-family:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace}
+  pre{background:#0f2130;color:#d8ecfa;padding:12px 14px;border-radius:8px;
+    overflow:auto;font-size:.9em;line-height:1.5}
+  .kbd{border:1px solid var(--border);border-bottom-width:2px;background:#fff;
+    border-radius:5px;padding:0 5px;font-size:.85em}
+  ul,ol{padding-left:22px}
+  li{margin:3px 0}
+  .tag-on{color:var(--good);font-weight:600}.tag-off{color:var(--muted)}
+  .callout{background:var(--accent-soft);border-left:5px solid var(--accent);
+    padding:10px 14px;border-radius:0 8px 8px 0;margin:12px 0}
+  .warn{background:var(--warn-soft);border-left:5px solid var(--warn);
+    padding:10px 14px;border-radius:0 8px 8px 0;margin:12px 0}
+  table{border-collapse:collapse;width:100%;margin:10px 0;font-size:.95em}
+  th,td{border:1px solid var(--border);padding:7px 9px;text-align:left;vertical-align:top}
+  th{background:#eef5fb}
+  .status{font-size:.72em;padding:2px 8px;border-radius:999px;font-weight:600}
+  .s-pend{background:#ffe7b3;color:#7a5200}
+  .s-done{background:#d9f3dc;color:#1a6b24}
+  .s-act{background:#dbe9ff;color:#134f9e}
+  .s-idea{background:#eee;color:#666}
+</style>
+</head>
+<body>
+<div class="wrap">
+
+<header class="hero">
+  <h1>Dizajn heurističke / statističke metode za IDS</h1>
+  <p>Živi "working" dokument: beležimo šta planiramo da radimo i kako —<br>
+     pre nego što išta pišemo u aplikaciju. Prati osnovne "otiske" napada na CAN magistrali.</p>
+  <span class="chip">Metodologija 1 od 3</span>
+  <span class="chip">Status: definisanje / dizajn</span>
+</header>
+
+<!-- ============================================================ -->
+<h2 class="section">1. Svrha dokumenta i gde je on u projektu</h2>
+<div class="card">
+  Ovo je <b>radni dizajn dokument</b> za prvu od tri IDS metodologije (heuristika/statistika). Ovde
+  definišemo <b>šta merimo, kako poredimo i koje pragove biramo</b> — bez pisanja koda dok sve ne
+  razumemo.
+  <div class="grid2" style="margin-top:12px">
+    <div><b>Nije:</b> ne menja aplikaciju. Ne dira main.py / stream.py / React.</div>
+    <div><b>Jeste:</b> pristup i plan za kasniji offline prototip koji se nadovezuje na
+      <code>backend/ids/ids_research.py</code>.</div>
+  </div>
+  <div class="callout">
+    Dokumentacija je na srpskom (kao <code>plan_rada.html</code>). Kod aplikacije ostaje isključivo
+    engleski.
+  </div>
+</div>
+
+<!-- ============================================================ -->
+<h2 class="section">2. Tri metodologije (kontekst odluke)</h2>
+<div class="grid3">
+  <div class="card"><b>1. Heuristika/statistika</b><br>
+    <span class="status s-act">u razradi (ovaj dokument)</span>
+    <p style="margin-bottom:0">Eksplicitna pravila na bus-"otiscima". Cilj: što manje ali jasnih
+      signala, pažljivo podešenih.</p></div>
+  <div class="card"><b>2. Isolation Forest</b><br><span class="status s-pend">plan</span>
+    <p style="margin-bottom:0">Nenadgledani ML na istim feature-vektorima; trenira se samo na normal.</p></div>
+  <div class="card"><b>3. One-Class SVM</b><br><span class="status s-pend">plan</span>
+    <p style="margin-bottom:0">Nenadgledani ML, isti feature; granica oko normale.</p></div>
+</div>
+<div class="callout">
+  <b>Odabrani princip:</b> sve tri dele <b>isti feature-ekstraktor</b> i istu podelu (TRAIN/VAL/TEST).
+  Heuristika je metodologija 1 → najviše je ručna, ali ono što tu izmerimo postaje i feature za ML.
+</div>
+
+<!-- ============================================================ -->
+<h2 class="section">3. Princip: magistrala je periodična</h2>
+<div class="card">
+  Temelj svega: u <b>normalnom</b> saobraćaju svaki CAN ID ima svoj stalni "otkucaj srca".
+  <ul>
+    <li><code>0x0130</code> → svakih ~0.010 s (≈100/s)</li>
+    <li><code>0x00a0</code> → svakih ~0.100 s (≈10/s)</li>
+    <li><code>0x05a0</code> → svakih ~1.000 s (≈1/s)</li>
+  </ul>
+  Napad poremeti tu pravilnost (ubaci poruku "između" dve normalne ili naglo promeni vrednost).
+  Zato je <b>razlika očekivanog vs. stvarnog</b> ključna, a ne apsolutne vrednosti.
+</div>
+
+<!-- ============================================================ -->
+<h2 class="section">4. Tri "otiska" / detektora koje pratimo</h2>
+<div class="grid3">
+  <div class="card"><b>A. Burst (isti ID prebrzo)</b>
+    <p>Cilja: <code>DoS</code>, <code>gear</code>, <code>RPM</code>.</p>
+    <p>Ako ID koji normalno šalje svakih 10ms stigne dva puta u 3ms → ubačena poruka.</p>
+  </div>
+  <div class="card"><b>B. Nepoznat ID</b>
+    <p>Cilja: <code>Fuzzy</code> (napadač izmišlja ID-jeve).</p>
+    <p>Ako stigne ID van rečnika 27 naučenih iz <code>normal.csv</code> → znak.</p>
+  </div>
+  <div class="card"><b>C. Payload / vrednost</b>
+    <p>Cilja: duži <code>gear</code>/<code>RPM</code> spoof (kad burst nije dovoljan).</p>
+    <p>Nagla, fizički nemoguća promena vrednosti signala.</p>
+  </div>
+</div>
+<div class="grid2">
+  <div class="card">
+    <b>Ono što je već potvrđeno iskustveno (u ids_research):</b>
+    <ul style="margin-bottom:0">
+      <li><span class="tag-on">A (burst)</span>: čista magistrala ~0–2/s; napadi jasno više.</li>
+      <li><span class="tag-on">B (nepoznat ID)</span>: 0 lažnih na normali (Fuzzy = 434 s sa njima).</li>
+      <li><span class="tag-off">C (payload)</span>: <b>još nije implementiran</b> — najmekši deo, zahteva razjašnjenje.</li>
+    </ul>
+  </div>
+  <div class="card">
+    <b>Zašto heuristika nije trivijalna (rizik grešaka):</b>
+    <p style="margin-bottom:0">Ručni, nezavisni pragovi teško podnose <i>kombinacije</i>
+      (dinamični signal vs konstantni; burst u pauzi čiji je ID u miru itd.).
+      ML to uči lakše. Zato heuristiku držimo što <b>jednostavnijom i jasnom</b>, a ML
+      (metode 2/3) nosi složeniju "osetljivost".</p>
+  </div>
+</div>
+
+<!-- ============================================================ -->
+<h2 class="section">5. Osnovna odluka: granularnost (gledanje)</h2>
+<div class="card">
+  <h3 style="margin-top:0">Kako gledamo magistralu?</h3>
+  <table>
+    <tr><th>Odluka</th><th>Izbor</th><th>Zašto</th></tr>
+    <tr><td>Vremenski prozor</td><td>1 s, ali <b>klizeći</b> (rolling, mali korak ~0.2s)</td>
+        <td>Da poruka na "granici" sekunde ne ispadne iz posmatranja</td></tr>
+    <tr><td>Analiza jedinica</td><td><b>Po svakom CAN ID-u zasebno</b> (ne cela magistrala prosekom)</td>
+        <td>Napad udara jedan ID; prosek preko 27 ID-jeva ga "razvodni" i postane nevidljiv</td></tr>
+    <tr><td>Rezultat prozora</td><td>Vektor po ID-u (brojevi za svaki ID)</td>
+        <td>Isti vektor kao feature za ML metode 2/3</td></tr>
+  </table>
+  <div class="callout">
+    <b>Razlika koju treba pamti:</b> "1 s" = koliko dugo gledam; "po ID-u" = koju stvar analiziram. Idemo
+    <b>1 s &rarr; ali gledaj svaki ID posebno</b>.
+  </div>
+</div>
+
+<!-- ============================================================ -->
+<h2 class="section">6. Memorija / poređenje (odgovor na "s čime poredimo?")</h2>
+<div class="card">
+  <p>Imamo <b>dve vrste memorije</b>. Ne poredimo "napamet" nego protiv naučenih granica:</p>
+  <table>
+    <tr><th>Šta pratimo</th><th>Vrsta memorije</th><th>S čime poredimo</th></tr>
+    <tr><td>Učestalost (burst / rate)</td><td>Trajna granica po ID</td>
+        <td>Na učenom opsegu ritma iz <code>normal.csv</code></td></tr>
+    <tr><td>Tip 1 (konstantan signal, npr. menjač)</td><td>Trajni opseg po ID</td>
+        <td>Fiksni raspon iz normale (ne sme da skače)</td></tr>
+    <tr><td>Tip 2 (dinamičan: brzina / RPM)</td><td>Trajna granica Δ + kratka tekuća (poslednja vrednost)</td>
+        <td>Normalan <i>skok Δ</i> iz normale (ne fiksni opseg vrednosti)</td></tr>
+    <tr><td>Nepoznat ID</td><td>Trajni rečnik iz treninga</td>
+        <td>Da li je ID u skupu poznatih (27)</td></tr>
+  </table>
+  <div class="warn">
+    Za C (payload) dogovoreno: koristi se <b>skalar svih 8 bajtova (B0..B7 spojeni u jedan broj)</b>
+    po ID-u kao "otisak sadržaja". Ne tražimo fizičko značenje vrednosti — cilj je normalan oblik
+    kroz vreme i anomalija pri neuobičajenom odstupanju od toga. Svi ID-evi se porede sa samim sobom
+    (svoja naučena normala), pa mešanje veličina među različitim signalima nije problem.
+  </div>
+  <div class="card">
+    <h3 style="margin-top:0">Šta čuvamo iz TRAIN-a kao "normalu" — po svakom CAN ID-u</h3>
+    <p>U trening fazi (na TRAIN delu <code>normal.csv</code>) za svaki ID računamo i memorišemo
+      referentne mere (dikt ključan kasnije u toku):</p>
+    <table>
+      <tr><th>Mera (po ID-u)</th><th>Svrha</th></tr>
+      <tr><td>Rečnik ID-eva (skup svih)</td><td>Detektor B (nepoznat ID)</td></tr>
+      <tr><td>Nominalni period / delta-t (medijan) + SD</td><td>Detektor A (burst / "prebrzo")</td></tr>
+      <tr><td>Tip signala: konstantan vs dinamičan (za svaki prati različito)</td><td>Odabir kako porediti</td></tr>
+      <tr><td>Skalar — normalna raspodela <b>Δ (promene između dve poruke)</b>: prosek, SD, kvantili</td><td>Detektor C: "nagli skok" sadržaja</td></tr>
+      <tr><td>Skalar — <b>opseg</b> (kvantili tipa [2%,98%], ne kruti min–max)</td><td>Detektor C: "izvan uobičajenog opsega"</td></tr>
+      <tr><td>Rate po prozoru (normalan broj poruka/ID/s)</td><td>Detektor A: flood istog ID-a</td></tr>
+    </table>
+    <div class="callout">
+      Δ se računa kao |scalar_now − scalar_prev| za <b>uzastopni par istog ID-a</b>. Koristi se
+      kombinacija Δ + opseg + broj događaja u prozoru, ne jedan sam broj.
+    </div>
+  </div>
+</div>
+
+<!-- ============================================================ -->
+<h2 class="section">7. Pragovi i statistika (da NISU proizvoljni)</h2>
+<div class="card">
+  Vodeći princip: <b>granicu postavi tako da bude retka u normali</b>, ne pogađaj k=nešto.
+  <ul>
+    <li>Iz <code>normal.csv</code> izmeri raspodelu onoga što pratimo (npr. svi normalni Δ vrednosti za
+        svaki ID, ili broj burst-ova po sekundi).</li>
+    <li>Granicu postavi na <b>kvantil</b> (npr. 99–99.9%) te normalne raspodele.
+        → "U normali se to desi < 0.1% vremena."</li>
+    <li>Kvantil biraš ciljajući FPR ≈ 0–1% na <b>nepoznatom čistom</b> delu normale (TEST), ne na vagi.</li>
+  </ul>
+  <div class="callout"><b>Zaključak o "osetljivosti":</b> ako heuristika postane prekomplikovana (mnogo
+    pragova + memorija), to je znak da taj deo preuzme ML. Heuristiku čuvamo što ravniju.</div>
+</div>
+
+<!-- ============================================================ -->
+<h2 class="section">8. Podela podataka (poštena evaluacija)</h2>
+<div class="card">
+  Jedan dataset. Ne mešamo napade u trening.
+  <pre>normal.csv (~506 s)
+  ├─ TRAIN  ~70%   → služi da nauči ritam/opsege/Δ/rečnik
+  ├─ VALID  ~15%   → da biramo kvantile (cilj FPR~0)
+  └─ TEST-norm ~15% → da potvrdimo FPR na nepoznatom čistom + 4 napada samo za evaluaciju
+DoS / Fuzzy / gear / RPM  → isključivo evaluacija (NIKAD u trening)</pre>
+  <div class="warn">Ako "podešavaš" pragove da bi DoS bio uhvaćen — to je data leak. Kalibracija ide na
+    čistom VALID delu.</div>
+</div>
+
+<!-- ============================================================ -->
+<h2 class="section">9. Otvorena pitanja pre pisanja koda</h2>
+<div class="card">
+  <p><i>Manjih rezervisanih pitanja imamo sve manje — mnoga su zatvorena gore. Što ostaje:</i></p>
+  <ul>
+    <li><b>C (payload) — nijansa:</b> za "nagli skok" poredimo Δ <i>skalara</i>. Pitanje je da li
+        kvantil Δ uzimamo po <code>B0..B7</code> kao skalara dugog int-a ili na jednom živom bajtu
+        (dogovoreno krenuti sa skalarom svih 8; testiraćemo da li je dovoljno).</li>
+    <li><b>Tip signala (konstantan/dinamičan):</b> automatska granica — definišemo prag šta je
+        "velika varijabilnost" (npr. udeo Δ≠0 ili raspon). Tačan kriterijum usvojimo prilikom
+        implementacije featurizacije.</li>
+    <li><b>Brzina prozora:</b> 1 s + rolling 0.2 s je polazna; optimizovaćemo posle.</li>
+    <li><b>Metrika:</b> event-level (broj uhvaćenih burst događaja) umesto % vremena — jer napad
+        dolazi u pulsovima.</li>
+  </ul>
+</div>
+
+<!-- ============================================================ -->
+<h2 class="section">10. Plan / TODOs</h2>
+<div class="card">
+  <table style="margin-top:4px">
+    <tr><th style="width:160px">Korak</th><th>Sadržaj</th><th style="width:110px">Status</th></tr>
+    <tr><td>01</td><td>Definisanje granularnosti (1 s klizeće, po ID-u)</td>
+        <td><span class="status s-done">dogovoreno</span></td></tr>
+    <tr><td>02</td><td>Razjasniti memoriju/poređenje, tipove signala i payload pristup (skalar)</td>
+        <td><span class="status s-done">dogovoreno</span></td></tr>
+    <tr><td>03</td><td>Definisati minimalni feature-set (A+B+C) — po ID-u, deljen za sve 3 metode</td>
+        <td><span class="status s-done">definisano (u ids_heuristic)</span></td></tr>
+    <tr><td>04</td><td>Offline prototip: TRAIN nominale + A(burst)+B(foreign) skinuto — 0% FPR na TEST-norm; C(payload) ostaje za kalibraciju</td>
+        <td><span class="status s-act">u toku</span></td></tr>
+    <tr><td>05</td><td>Poređenje sa ML (2, 3) na istim featureima (kasnije)</td>
+        <td><span class="status s-pend"></span></td></tr>
+  </table>
+  <p style="color:var(--muted);font-size:.9em;margin-bottom:0">Ažuriramo ovaj dokument kako napredujemo;
+  ne pišemo kod u aplikaciji dok koraci 01–03 nisu jasni.</p>
+</div>
+
+<!-- ============================================================ -->
+<h2 class="section">11. Trenutni eksperimentalni rezultati (prototip <code>ids_heuristic.py</code>)</h2>
+<div class="card">
+  <p>Prvi iskorak prototipa — <b>A (burst) + B (nepoznat ID)</b>, bez C (payload). Calibrated granice:
+     burst&gt;2 <i>ILI</i> bilo šta stran na nepoznat ID. Norma uči na TRAIN (~70% normal).</p>
+  <table>
+    <tr><th>Skup</th><th>Windows</th><th>Označenih</th><th>Events</th><th>Napomena</th></tr>
+    <tr><td><b>TEST-normal</b> (~15%)</td><td>77</td><td>0</td><td>0</td>
+        <td>✅ <b>0.0% FPR</b> na nepoznatom čistom</td></tr>
+    <tr><td>DoS</td><td>2813</td><td>534</td><td>250</td><td>raštrkani burst pulsevi</td></tr>
+    <tr><td>Fuzzy</td><td>2950</td><td>526</td><td>345</td><td>Mnoge kroz nepoznate ID</td></tr>
+    <tr><td>gear</td><td>2433</td><td>56</td><td>40</td><td>Spool u pulsovima</td></tr>
+    <tr><td>RPM</td><td>2436</td><td>70</td><td>43</td><td>—</td></tr>
+  </table>
+  <div class="warn"><b>Zapažanje za C (payload):</b> naivna delta &gt; kvantil rule skoro uvek puca na
+    <i>dinamičnim</i> signalima (75/77 windows na VALID okupiranih). Dakle C-leg ne sme da bude "bilo
+    koji delta preko kvantila", već treba kombinacija (učestalost skokova/opseg)/kalibracija na VALID.
+    Ovo je sledeći korak.</div>
+  <p style="color:var(--muted);margin-bottom:0">Podela: TRAIN 70% / VALID 15% / TEST-normal 15% na
+    <code>normal.csv</code> (u kodu). Napadi samo za eval.</p>
+</div>
+
+<!-- ============================================================ -->
+<h2 class="section">12. Odobreni plan (rezime + koraci) — krećemo korak po korak</h2>
+
+<div class="card">
+  <h3 style="margin-top:0">Rezime koji je korisnik potvrdio — tri testa + kombinacija</h3>
+  <p>Model se svodi na <b>tri nezavisna testa</b>, svaki daje 0/1 po (ID/poruci/prozoru), pa se na
+     kraju spajaju u <b>jednu ocenu 0/1</b> (ne zbir — odluka).</p>
+  <table>
+    <tr><th>#</th><th>Test</th><th>Šta radimo</th><th>Glavni cilj</th></tr>
+    <tr><td>1</td><td><b>ID / rečnik</b></td>
+        <td>Skupimo sve jedinstvene CAN-ID-jeve; na odluku ID koji nije u skupu → anomalija.</td>
+        <td>najjednostavnije; Fuzzy</td></tr>
+    <tr><td>2</td><td><b>Vremenska / perioda</b></td>
+        <td>Koliko često poruka sa datim ID-em dolazi — <i>perioda</i> (delta-t između dve iste), npr. po sekundu.</td>
+        <td>DoS / ubrzan ritam</td></tr>
+    <tr><td>3</td><td><b>Sadržaj / payload → skalar</b></td>
+        <td>Skalar = svih 8 bajtova spojenih. Merimo <b>Δ (prosečna/prijelaz ma promena iz poruke u poruku)</b>
+            + beležimo <b>min/max</b> vrednost skalara. Finalni sud za ovaj test = kombinacija Δ i opsega (0/1).</td>
+        <td>gear / RPM (spoofing)</td></tr>
+  </table>
+  <p><b>Finalni agregate sud:</b> da li je paket/prozor anomalija → ponovo kombinacija 0/1 rezultata ta 3 testa
+     (ne težinski zbroj, nego logička/kombinatorna odluka, npr. pojedini test dovoljno jak sam ili kumulativni).</p>
+</div>
+
+<div class="card">
+  <h3 style="margin-top:0">Iskrene napomene na plan (sporazumno i bez komplikacija)</h3>
+  <ul>
+    <li>Dinamični signali (brzina/RPM) legitimno mijenjaju periodu i vrednost → <b>min/max je jedan signal</b>;
+        pravi "nagli skok" najbolje hvata <b>Δ</b> (naglas je na Δ).</li>
+    <li>Pitanje "perioda vs frekvencija poruka u sekundi" — biramo <b>periodu</b> (vreme između dve poruke).</li>
+    <li><b>Klizni korak 0.2s</b> nije obavezan odmah; krećemo čistim 1s prozorima pa dodajemo ako treba.</li>
+    <li>Tri testa nisu jednako "teška"; u finalnoj kombinaciji pojedini znak (npr. nepoznat ID) može biti
+        dovoljno jak sam. Težine se ne pogađaju napamet nego se procene, ali ne sada — korak po korak.</li>
+    <li><b>Čuvanje izračunatih vrednosti (odluka):</b> skalar po poruci računamo <i>živo u memoriji</i> (svaki
+        put kad pokrenemo) — <b>ne pravimo</b> ogroman duplikat "obogaćen" CSV. <b>Trajno zapisujemo</b> samo
+        malu naučenu <b>norma-tabelu</b> (per-ID: rečnik, perioda, Δ/opseg skalara) kad završimo Korak 3.</li>
+  </ul>
+</div>
+
+<div class="card">
+  <h3 style="margin-top:0">Koraci skripte (pun spisak; izvodimo jedan po jedan, NE sve odjednom)</h3>
+  <ol>
+    <li><b>Korak 1 — Učitaj <code>normal.csv</code> i RAZDELI</b> (TRAIN ~70% / VALID ~15% / TEST-normal ~15%). <i>✔ odrađeno</i></li>
+    <li><b>Korak 2 — Skalar:</b> svaka poruka → skalar od 8 bajtova (<code>B0..B7</code>, hex → spojeni int). <i>✔ odrađeno (računa se u memoriji)</i></li>
+    <li><b>Korak 3 — Učenje iz TRAIN, po ID:</b>
+      <ul>
+        <li>3a. Rečnik ID-eva (za test 1).</li>
+        <li>3b. Perioda (delta-t između poruka istog ID): medijan/razmak.</li>
+        <li>3c. Skalar: prosečan Δ (iz poruke u poruku), opseg (min–max ili percentil).</li>
+        <li>3d. (Zabeleži tip: koliko "miran" vs "dinamičan" — informacijski za kasnije.)</li>
+      </ul>
+      <i>✔ odrađeno — norma-tabela sačuvana u <code>ids_norma.csv</code> (27 ID)</i></li></li>
+    <li><b>Korak 4 — Za svaki 1s prozor (VALID/TEST/napad):</b>
+      <ul>
+        <li>• test1: pojavio li se nepoznat ID?</li>
+        <li>• test2: ima li perioda koja uska u burst (prebrzo)?</li>
+        <li>• test3: Δ preko granice? i/ili vrednost van opsega?</li>
+        <li>• svaki test daje 0/1 + brojač.</li>
+      </ul></li>
+    <li><b>Korak 5 — Konačan sud prozora:</b> kombinacija 0/1 (npr. OR sa težinama ili poen), pa u odnosu na prag.</li>
+    <li><b>Korak 6 — Evaluacija:</b> FPR na TEST-normal, event-level na napadima.</li>
+  </ol>
+  <p style="color:var(--muted);margin-bottom:0">Izvodimo strogo redom; posle svakog koraka proveriš rezultat
+     i daješ uputstvo za sledeći. Trenutno stanje fajla <code>ids_heuristic.py</code>: samo Korak 1 (podela).
+     Ostali koraci se dodaju jedan po jedan po tvojoj komandi.</p>
+</div>
+
+<!-- ============================================================ -->
+<h2 class="section">13. ZAVRŠENO — metod #1 (heuristički IDS) kompletiran</h2>
+
+<div class="card">
+  <p><b>Status:</b> svih 6 koraka implementirano u <code>backend/ids/ids_heuristic.py</code>,
+     rezultati izmereni. Svi pragovi naučeni/kalibrisani <b>isključivo na čistom
+     podatku</b> (TRAIN/VALID/TEST-normal), napadi samo za evaluaciju — bez data-leak-a.</p>
+
+  <h3 style="margin-top:6px">Konačni dizajn tri testa</h3>
+  <ul>
+    <li><b>test1 (nepoznat ID):</b> CAN_ID van rečnika 27 naučenih ID-eva → anomalija.</li>
+    <li><b>test2 (burst):</b> per-ID prag <code>gap &lt; 0.5 × period_min</code> (min gap iz
+        čistog TRAIN-a), umesto ranije globalne konstante <code>0.6×</code>. Razlog: prirodni
+        jitter visokofrekventnih ID-eva (npr. <code>0x0545</code> ide do ~5.05ms = 0.505×)
+        je lažno okidao burst; per-ID hard-floor + faktor 0.5 daje FPR=0 a hvata pravi DoS
+        (red veličine gušći).</li>
+    <li><b>test3 (payload) — klasa po bajtu:</b> svaka pozicija B0..B7 se klasifikuje iz
+        čistog TRAIN-a po raspodeli |Δ|:
+        <ul>
+          <li><b>STATIC</b> (max|Δ|=0) → vrednost van [lo,hi] ≥ 3 uzastopne poruke;</li>
+          <li><b>DRIFT</b> (0&lt;max|Δ|≤8) → korak &gt; 2×(čisti max korak);</li>
+          <li><b>DYNAMIC</b> (max|Δ|&gt;8) → <b>preskače se</b> (status/opcode bajtovi,
+              pušteni ML metodi — iskrena granica heuristike).</li>
+        </ul>
+        Ovo zamenjuje stari "skalar Δ" koji su brojači/drifteri izbacivali iz takta
+        (97–100% lažnih pozitivnih).</li>
+  </ul>
+
+  <h3 style="margin-top:6px">Rezultati (event-level evaluacija)</h3>
+  <ul>
+    <li><b>FPR = 0%</b> na VALID-u i TEST-normal-u (čisti podaci).</li>
+    <li><b>Detekcija sva 4 napada = 100% coverage</b> (DoS, Fuzzy, gear, RPM), svaki kao
+        ~2 neprekidna eventa.</li>
+    <li>DoS → test2 (burst) + test3 (payload); Fuzzy → test1 (nepoznat ID); gear/RPM →
+        test3 (payload). Napomena: DoS ubrizgava legit ID sa promenjenim payload-om, pa ga
+        test3 hvata kao payload anomaliju — dodatna, nezavisna potvrda.</li>
+  </ul>
+</div>
+
+</div>
+</body>
+</html>

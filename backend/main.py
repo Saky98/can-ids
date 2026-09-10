@@ -124,11 +124,19 @@ def _dlc_modes(df):
 
 
 @app.get("/api/top-ids")
-def top_ids(label: str = Query("normal"), top: int = Query(15)):
-    """Top CAN IDs by frequency for the given label."""
+def top_ids(label: str = Query("normal"), top: int = 0):
+    """All CAN IDs for the given label, ranked by frequency (descending).
+
+    By default (top=0) returns EVERY distinct CAN ID present in the file, so
+    the Analysis table can show the full set. `top` is optional: a positive
+    value limits the result to the first N most frequent (kept for history /
+    lightweight calls), and 0/absent means no limit.
+    """
     if label not in DATAFRAMES:
         return {"error": f"unknown label '{label}'", "available": list(META.keys())}
-    vc = DATAFRAMES[label]["CAN_ID"].value_counts().head(top)
+    vc = DATAFRAMES[label]["CAN_ID"].value_counts()
+    if top and top > 0:
+        vc = vc.head(top)
     total = len(DATAFRAMES[label])
     return [{"can_id": int(k), "hex": f"0x{int(k):03X}", "count": int(v),
              "pct": round(100 * v / total, 3), "label": label}
@@ -137,15 +145,16 @@ def top_ids(label: str = Query("normal"), top: int = Query(15)):
 
 @app.get("/api/deltat")
 def deltat(label: str = Query("normal"), top_ids_str: str = Query("")):
-    """Delta-t statistics (periodicity) by top CAN IDs."""
+    """Delta-t statistics (periodicity) for every distinct CAN ID."""
     if label not in DATAFRAMES:
         return {"error": f"unknown label '{label}'"}
-    df = DATAFRAMES[label].sort_values("Timestamp")
-    # distinguish delta-t by CAN ID
+    df = DATAFRAMES[label]
     result = {}
-    top = df["CAN_ID"].value_counts().head(10).index.tolist()
+    # full sorted set of ids (not truncated), like /api/top-ids
+    top = (df["CAN_ID"].value_counts().index)
+    sdf = df.sort_values("Timestamp")  # single sort; reuse per-id below
     for cid in top:
-        sub = df[df["CAN_ID"] == cid].sort_values("Timestamp")
+        sub = sdf[sdf["CAN_ID"] == cid]  # already time-ordered
         dt = sub["Timestamp"].diff().dropna()
         if len(dt) > 1:
             result[f"{int(cid)}"] = {

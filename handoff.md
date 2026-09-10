@@ -165,6 +165,42 @@ CANL -> OBD-II utičnica, pin 14
 4. Pisanje / finalizacija **ML modela** za detekciju anomalija (featurei: ID, delta-t,
    dužina, payload).
 
+### Odabrane metode IDS-a za diplomski (odluka — 09.2026)
+
+Korisnik je odlučio da diplomski uporedi **tri metodologije** za IDS (a zatim komisiji
+predstavi 1 "glavnu" za live prikaz; ostale služe kao uporedno poređenje u radu):
+
+1. **Heurističko / statističko** — eksplicitna pravila zasnovana na bus-"otiscima":
+   burst, nepoznati CAN ID-ovi, promena vrednosti/payload-a. **KOMPLETIRANO** u
+   `backend/ids/ids_heuristic.py` (koraci 1–6, pogledaj `heuristics.html` §13):
+
+   - **test1 (nepoznat ID):** ID van rečnika 27 naučenih ID-eva.
+   - **test2 (burst):** per-ID prag `gap < 0.5 × period_min` (min gap iz čistog
+     TRAIN-a), umesto globalnog `0.6×` koji je lažno okidao na prirodni jitter
+     visokofrekventnih ID-eva.
+   - **test3 (payload):** per-byte klasifikacija iz čistog TRAIN-a:
+     **STATIC** (vrednost van [lo,hi] ≥3×), **DRIFT** (korak > 2× čisti max korak),
+     **DYNAMIC** (preskače se — status/opcode bajtovi, ostavljeni ML-u).
+   - **Korak 5:** logički OR tri testa = anomalija prozora.
+   - **Rezultat:** FPR = 0% na VALID/TEST-normal; **100% coverage** na sva 4 napada
+     (DoS→burst+payload, Fuzzy→nepoznat ID, gear/RPM→payload).
+
+   Stariji istraživački prototip `ids_research.py` ostaje kao ranija verzija iste ideje.
+2. **Isolation Forest** — nenadgledani ML; Feature-vektori iz iste featurizacije,
+   trenira se samo na normal.csv.
+3. **One-Class SVM** — nenadgledan; isti feature-i, trenira samo na normal.csv.
+
+Važne naučne odluke (koje NE smemo zaboraviti kod implementacije):
+- Sva tri dele **isti feature-ekstraktor** (po CAN ID / sekundi: rate, pravilnost
+  ritma, promena vrijednosti) i **istu podelu**.
+- Podela unutar jednog `normal.csv`: **TRAIN ~70% → VALIDATION ~15% → TEST-normal
+  ~15%**, onda 4 napada (DoS/Fuzzy/gear/RPM) samo kao **evaluacija** (NIKAD u trening
+  ili podešavanje — sprečava data leak).
+- "Bolji algoritam" se **dokazuje merenjem** (precision/recall/F1) na sopstvenom
+  dataset-u, ne unapred proglašava. Predlog: pustiti oba ML-a, izabrati po rezultatu.
+- Plot: procjena je da 3 metode za analizu + 1 u aplikaciji **ne čini rad prevelikim**
+  (zajednički feature = mali inkrementalni trud); all-3-u-live bi znatno povećao posao.
+
 ### Mogući fokus rada u nastavku (odabrati)
 
 1. C++/Arduino kod za ESP32 (TWAI drajver + SLCAN/LAWICEL). _(napisano)_
