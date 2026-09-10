@@ -118,7 +118,9 @@ The **Live** page shows the bus in real time and can save every received frame.
 - ✅ Analysis page (ID tables, frequencies, periodicity, sample messages)
 - ✅ Simulator — replays recorded data as a live WebSocket stream
 - ✅ Live-mode dashboard + dual-format recording/export (CSV + raw log)
-- 🚧 IDS engine / metrics (in progress)
+- ✅ IDS heuristic detector (method #1) + red-team injection evaluation
+- ✅ IDS Isolation Forest detector (method #2) — global per-frame, validated on 3 manifests
+- 🚧 IDS One-Class SVM (method #3) + live metrics (in progress)
 - 🚧 Live capture hardware (ESP32 / socketcan) — planned; `source=live` is a
   dev replay bridge until then
 

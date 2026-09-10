@@ -5,6 +5,7 @@ frontend/dist/
 __pycache__/
 *.pyc
 .DS_Store
+*.joblib
 
 # --- Dataset (large, ~GB) — NOT stored in Git ---
 dataset /

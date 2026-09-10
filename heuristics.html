@@ -87,8 +87,8 @@
     <span class="status s-act">u razradi (ovaj dokument)</span>
     <p style="margin-bottom:0">Eksplicitna pravila na bus-"otiscima". Cilj: što manje ali jasnih
       signala, pažljivo podešenih.</p></div>
-  <div class="card"><b>2. Isolation Forest</b><br><span class="status s-pend">plan</span>
-    <p style="margin-bottom:0">Nenadgledani ML na istim feature-vektorima; trenira se samo na normal.</p></div>
+  <div class="card"><b>2. Isolation Forest</b><br><span class="status s-done">done</span>
+    <p style="margin-bottom:0">Nenadgledani ML (globalni, per-frame z-score); trenira se samo na normal, validira na 3 manifesta.</p></div>
   <div class="card"><b>3. One-Class SVM</b><br><span class="status s-pend">plan</span>
     <p style="margin-bottom:0">Nenadgledani ML, isti feature; granica oko normale.</p></div>
 </div>
@@ -440,6 +440,85 @@ DoS / Fuzzy / gear / RPM  → isključivo evaluacija (NIKAD u trening)</pre>
      random uzorka. DoS (gust burst) se hvata 100%; suptilan pojedinačni spoof (Fuzzy/gear/RPM)
      ima realan recall ~82–87%, što je tačno mesto gde ML metoda treba da nadoknadi
      heuristiku.</div>
+
+<!-- ============================================================ -->
+<h2 class="section">15. ZAVRŠENO — metod #2 (Isolation Forest) — <code>ids_isolation_forest.py</code></h2>
+
+<div class="card">
+  <p><b>Status:</b> globalni Isolation Forest implementiran i pošteno izmeren na istom
+     red-team testu (3 manifesta), uz istu podelu normal.csv i isti no-leak protokol
+     (trenira se SAMO na čistoj TRAIN; VALID za prag; napadi i manifesti isključivo za
+     evaluaciju).</p>
+
+  <h3 style="margin-top:6px">Zašto NE "per CAN_ID × 1s prozor" (kao ids_features.py)?</h3>
+  <p>Jedan ubrizgan okvir je nevidljiv na nivou prozora: čist prozor nosi ~1950 okvira,
+     pa jedan (čak i 8-frame DoS burst) pomeri window-wide agregat za ~0.05%. Forest
+     treniran na tim agregatima je strukturno slep za pojedinačne spoof okvire koji su u
+     manifestima. I per-ID profilisanje (po jedan forest po CAN_ID) ne vidi jedan okvir
+     unutar svoje 1s korpe. Zato: <b>per-frame</b>.</p>
+
+  <h3 style="margin-top:6px">Dizajn (3 odluke)</h3>
+  <ul>
+    <li><b>1. Per-frame</b> — jedinica detekcije je pojedinačni okvir (baš ono što se ubrizgava).</li>
+    <li><b>2. Z-score prema po-ID čistoj baznoj liniji</b> — svaki bajt znači nešto drugo
+        po CAN_ID, pa se okvir izražava kao odstupanje svojih 8 payload bajtova i gap-a od
+        te ID-jeve čiste raspodele (mean/std). Čist okvir ~N(0,1) na svakoj koordinati;
+        spoof raznese jedan ili više bajtova na |z| od desetina/stotina.</li>
+    <li><b>3. Koncentrisano (3 feature-a, ne 9)</b> — slanje 8 sirovih per-bajt z-skora + gap_z
+        u jedan globalni forest RAZVODNI signal: spoof menja samo 1–3 bajta, 6–7 koordinata
+        ostaje ~0, prosečna dužina puta se jedva pomeri (izmereno: max|z|=494 je i dalje
+        bodovan kao "normalan"). Agregiranje u <i>visinu</i> (<code>max_abs_z</code>),
+        <i>širinu</i> (<code>n_over_2</code>) i <i>ritam</i> (<code>gap_z</code>) ga
+        koncentriše pa forest izoluje.</li>
+  </ul>
+
+  <h3 style="margin-top:6px">Feature vektori (po okviru)</h3>
+  <ul>
+    <li><code>gap_z</code> = (gap − period_mean) / max(period_std, 0.5) → DoS burst daje jako negativno.</li>
+    <li><code>max_abs_z</code> = max |byte_z| preko 8 bajtova → magnituda spoofa.</li>
+    <li><code>n_over_2</code> = broj bajtova sa |byte_z| &gt; 2 → širina spoofa.</li>
+  </ul>
+  <p>Nepoznat CAN_ID (bez bazne linije) se javlja <b>van pojasa</b> jednostavnim membership
+     testom (isto kao heuristički test1), NE kroz forest. Manifesti sadrže samo poznate ID-jeve,
+     pa je forest suđen isključivo po svom izolovanju payload/ritma poznatih ID-jeva.</p>
+
+  <h3 style="margin-top:6px">Rezultati — red-team (3 manifesta, pošten test 1:1 sa heuristikom)</h3>
+  <table>
+    <tr><th>Napad</th><th>Isolation Forest</th><th>Heuristika</th></tr>
+    <tr><td><b>DoS</b></td><td><b>100%</b></td><td>100%</td></tr>
+    <tr><td><b>Fuzzy</b></td><td><b>89.3%</b></td><td>85%</td></tr>
+    <tr><td><b>gear</b></td><td>77.3%</td><td>87%</td></tr>
+    <tr><td><b>RPM</b></td><td>78.3%</td><td>82%</td></tr>
+  </table>
+
+  <h3 style="margin-top:6px">FPR</h3>
+  <ul>
+    <li><b>VALID FPR = 0%</b> (0 / 148 331 okvira) — prag kalibrisan na VALID.</li>
+    <li><b>TEST-normal FPR = 0.0013%</b> (2 / 148 331 okvira) — iskrena generalizacija na
+        neviđenom čistom periodu.</li>
+  </ul>
+
+  <h3 style="margin-top:6px">Čitavi napad-fajlovi (frame-level coverage, kontinuitet sa metodom #1)</h3>
+  <table>
+    <tr><th>Fajl</th><th>okvira</th><th>flagged</th><th>events</th><th>coverage</th></tr>
+    <tr><td>DoS</td><td>3 078 250</td><td>517 701</td><td>430 944</td><td>16.82%</td></tr>
+    <tr><td>Fuzzy</td><td>3 347 013</td><td>562 305</td><td>459 872</td><td>16.80%</td></tr>
+    <tr><td>gear</td><td>3 845 890</td><td>589 277</td><td>513 279</td><td>15.32%</td></tr>
+    <tr><td>RPM</td><td>3 966 805</td><td>580 084</td><td>540 159</td><td>14.62%</td></tr>
+  </table>
+
+  <div class="callout"><b>Ključni nalaz:</b> Isolation Forest sada hvata pojedinačne spoof
+     okvire (cilj zbog kojeg je i uzet umesto pukih 1s-prozor agregata) uz praktično nula FPR.
+     Na Fuzzy prevazilazi heuristiku (89.3% vs 85%); na gear/RPM (77–78%) je blago ispod
+     heurističkog test3, što je pošteno — heuristika tu koristi "≥3 uzastopna" ojačanje koje
+     forest (bez temporalnog konteksta poslednjeg okvira) ne replicira. To je realna, iskrena
+     granica metode, pogodna za poglavlje o poređenju pristupa.</div>
+
+  <h3 style="margin-top:6px">Uputstvo za pokretanje</h3>
+  <pre>cd backend/ids
+../../.venv/bin/python ids_isolation_forest.py</pre>
+  <p style="color:var(--muted)">Model se čuva u <code>ids_isolation_forest.joblib</code>;
+     poznati ID-jevi u <code>ids_if_known_ids.txt</code>.</p>
 </div>
 
 </div>
