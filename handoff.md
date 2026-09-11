@@ -332,6 +332,37 @@ Ključni problem koji se pojavio u live prikazu (i koren "bagovanja"):
 heuristic ~5ms, one-class svm ~15ms, isolation forest ~57ms (dominantna je ~50ms
 tick playback petlje, ne samo skorovanje).
 
+### Propusnost vs. realna CAN magistrala (da li IDS može da isprati live?)
+Pitanje za rad: da li naš IDS teoretski može da isprati SVE poruke u skoro-realtime?
+
+**Naš dataset:** ~988 000 poruka / ~506 s ≈ **~1950 poruka/s** (normal.csv).
+
+**Realne CAN magistrale (redovi veličine):**
+- **500 kbit/s** (drivetrain) — max ~3500–5000 msg/s, realno **~1500–3000 msg/s** pri vožnji.
+- **250 kbit/s** (comfort/infotainment) — **~1000–2000 msg/s**.
+- **Diagnostics** (OBD) — **~10–100 msg/s** (request/response, skoro prazno).
+
+**Polo 6R (2009, 1.6 TDI) — konkretno vozilo iz handoff-a:**
+- Tačan broj msg/s po magistrali NIJE javno dokumentovan (zavisi od ECU-ova/opreme);
+  koristimo tipične raspone gore.
+- **Važno (već poznato):** OBD-II port (pin 6/14) NE daje pravi saobraćaj — ide na CAN
+  Gateway i pokazuje samo dijagnostiku (request `0x100`/response `0x200`), pa je
+  diagnostics saobraćaj zanemarljiv; drivetrain i comfort nose pravi saobraćaj.
+
+**Margina našeg IDS-a nad najopterećenijom magistralom (drivetrain ~3000 msg/s):**
+
+| Metoda | Naš protok | Margina (drivetrain) | Margina (comfort ~500/s) |
+|--------|-----------|----------------------|--------------------------|
+| Heuristic       | 42 000 msg/s | ~14× | ~84× |
+| Isolation Forest| 18 000 msg/s | ~6×  | ~36× |
+| One-Class SVM   | 15 000 msg/s | ~5×  | ~30× |
+
+**Zaključak:** DA — čak i najsporija metoda (SVM, ~15k msg/s) ima ~5× marginu nad
+najopterećenijom magistralom. Uz disclaimer: brojke su za **čisti Python na desktopu**;
+na ESP32 (live hardver) model bi morao da se kvantizuje/pojednostavi — to je druga faza.
+Iskreno formulisanje za rad: "tipičan raspon 1500–3000 msg/s za drivetrain, tačna vrednost
+zavisi od konfiguracije vozila".
+
 ### Otvorena pitanja pre nastavka
 1. Payload — app pokazuje sirove hex + statističke šablone; fizičko značenje (brzina/RPM...)
    tumačimo ručno / uz pomoć.

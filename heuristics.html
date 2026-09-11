@@ -630,6 +630,26 @@ DoS / Fuzzy / gear / RPM  → isključivo evaluacija (NIKAD u trening)</pre>
      je "dovoljno mala latencija"). Bitno je da se meri OBJEKTIVNO (u kodu), a ne subjektivno
      "na oko" — jer je priroda mana pojedine metode (IF per-frame overhead) lako mogla biti
      pogrešno pripisana drugoj metodi (heuristika).</div>
+
+  <h3 style="margin-top:6px">Propusnost vs. realna CAN magistrala</h3>
+  <p>Pitanje: da li IDS može da isprati SVE poruke u skoro-realtime?</p>
+  <ul>
+    <li><b>Naš dataset:</b> ~988 000 poruka / ~506 s ≈ <b>~1950 poruka/s</b>.</li>
+    <li><b>500 kbit/s (drivetrain):</b> max ~3500–5000, realno <b>~1500–3000 msg/s</b>.</li>
+    <li><b>250 kbit/s (comfort):</b> <b>~1000–2000 msg/s</b>.</li>
+    <li><b>Diagnostics (OBD):</b> <b>~10–100 msg/s</b> (request/response; Polo 6R OBD je
+        Gateway-dijagnostika, ne prava magistrala).</li>
+  </ul>
+  <table>
+    <tr><th>Metoda</th><th>Naš protok</th><th>Margina (drivetrain ~3000/s)</th></tr>
+    <tr><td>Heuristic</td><td>42 000 msg/s</td><td>~14×</td></tr>
+    <tr><td>Isolation Forest</td><td>18 000 msg/s</td><td>~6×</td></tr>
+    <tr><td>One-Class SVM</td><td>15 000 msg/s</td><td>~5×</td></tr>
+  </table>
+  <div class="callout"><b>Zaključak:</b> čak i najsporija metoda ima ~5× marginu nad
+     najopterećenijom magistralom → IDS zadovoljava zahtev za skoro-realtime. Disclaimer:
+     brojke su za čist Python na desktopu; na ESP32 (live hardver) model treba kvantizovati.
+     Tačan broj msg/s za Polo 6R nije javno dokumentovan — koristimo tipične raspone.</div>
 </div>
 
 </div>
