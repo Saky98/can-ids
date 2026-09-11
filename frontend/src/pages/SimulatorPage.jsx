@@ -55,6 +55,7 @@ export default function SimulatorPage() {
   const [quarantine, setQuarantine] = useState([]); // blocked frames (newest first)
   const [blockedCount, setBlockedCount] = useState(0);
   const [injectedCount, setInjectedCount] = useState(0);
+  const [eventLog, setEventLog] = useState([]);   // recent client-side events (newest first)
 
   const wsRef = useRef(null);
   const ringRef = useRef([]);
@@ -71,6 +72,17 @@ export default function SimulatorPage() {
     blockedCountRef.current += blocked.length;
     setQuarantine(quarantineRef.current);
     setBlockedCount(blockedCountRef.current);
+  };
+
+  const logEvent = (what, extra = {}) => {
+    const rec = {
+      t: new Date().toISOString().slice(11, 23),
+      perf: Math.round(performance.now()),
+      what,
+      ...extra,
+    };
+    setEventLog((prev) => [rec, ...prev].slice(0, 60));
+    console.log('[ids-log]', rec);
   };
 
   // ---- (re)open stream whenever controls change or when started/stopped ----
@@ -117,6 +129,7 @@ export default function SimulatorPage() {
         streamSeq.current = 0;
         ringRef.current = [];
         setMsgs([]);
+        logEvent('hello', { ids: msg.ids, ids_ready: msg.ids_ready, run: msg.run });
       } else if (msg.type === 'messages') {
         const items = msg.items || [];
         if (msg.done != null) {
@@ -125,9 +138,16 @@ export default function SimulatorPage() {
         }
         // injected batch vs replay batch
         if (msg.injected) {
+          const nBlocked = items.filter((it) => it.blocked).length;
+          const dt = items[0]?.detect_ms;
           injectedCountRef.current += items.length;
           setInjectedCount(injectedCountRef.current);
           items.forEach((it) => { it.injected = true; });
+          logEvent('recv:injected', {
+            attack: msg.attack, frames: items.length, blocked: nBlocked,
+            detect_ms: dt,
+            client_roundtrip_ms: dt != null ? Math.round(performance.now()) : undefined,
+          });
         } else {
           items.forEach((it) => { it.injected = false; });
         }
@@ -175,7 +195,13 @@ export default function SimulatorPage() {
   const inject = (attack) => {
     const ws = wsRef.current;
     if (ws && ws.readyState === WebSocket.OPEN) {
-      try { ws.send(JSON.stringify({ cmd: 'inject', attack })); } catch { /* ignore */ }
+      // client-side wall-clock ms + high-res, so the server log can measure the
+      // full click -> detection round trip (not just server-side latency).
+      const t = { cmd: 'inject', attack, client_ts: Date.now(), client_perf: performance.now() };
+      logEvent('click:inject', { attack });
+      try { ws.send(JSON.stringify(t)); } catch { /* ignore */ }
+    } else {
+      logEvent('click:inject', { attack, error: 'ws not open' });
     }
   };
 
@@ -448,6 +474,44 @@ export default function SimulatorPage() {
               </tbody>
             </table>
           </div>
+        </div>
+      </div>
+
+      {/* ---------------- Event log (client-side) ---------------- */}
+      <div className="card" style={{ marginTop: 16 }}>
+        <h3 style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+          <span>📋 Event log <span style={{ color: 'var(--text-2)', fontWeight: 400, fontSize: 12 }}>(client-side; full log in <code>backend/ids/ids_events.jsonl</code>)</span></span>
+          <span className="badge" style={{ background: 'var(--bg-2)', color: 'var(--text-2)', fontSize: 11 }}>
+            {eventLog.length} recent
+          </span>
+        </h3>
+        <div style={{ maxHeight: 260, overflowY: 'auto', marginTop: 10, fontFamily: 'ui-monospace, SFMono-Regular, Menlo, Consolas, monospace' }}>
+          <table style={{ fontSize: 12 }}>
+            <thead style={{ position: 'sticky', top: 0, background: 'var(--bg-1)', zIndex: 1 }}>
+              <tr>
+                <th style={{ width: 110 }}>Time</th>
+                <th style={{ width: 90 }}>perf(ms)</th>
+                <th style={{ width: 160 }}>Event</th>
+                <th>Detail</th>
+              </tr>
+            </thead>
+            <tbody>
+              {eventLog.map((e, i) => (
+                <tr key={i} style={{ borderBottom: '1px solid var(--border)' }}>
+                  <td className="mono" style={{ color: 'var(--text-2)' }}>{e.t}</td>
+                  <td className="mono" style={{ color: 'var(--accent)' }}>{e.perf}</td>
+                  <td className="mono" style={{ color: 'var(--text-1)', fontWeight: 600 }}>{e.what}</td>
+                  <td className="mono" style={{ color: 'var(--text-2)', fontSize: 11 }}>
+                    {Object.entries(e).filter(([k]) => !['t','perf','what'].includes(k))
+                      .map(([k, v]) => `${k}=${typeof v === 'object' ? JSON.stringify(v) : v}`).join(' ')}
+                  </td>
+                </tr>
+              ))}
+              {eventLog.length === 0 && (
+                <tr><td colSpan="4" style={{ textAlign: 'center', color: 'var(--text-2)', padding: '20px' }}>No events yet — start the stream.</td></tr>
+              )}
+            </tbody>
+          </table>
         </div>
       </div>
 

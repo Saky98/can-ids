@@ -47,6 +47,8 @@ from typing import AsyncIterator, Iterator
 
 from recorder import Recorder
 
+from ids import ids_log
+
 APP_DIR = os.path.dirname(__file__)
 DATA_DIR = os.path.join(APP_DIR, "..", "dataset ", "normalized")
 
@@ -159,6 +161,7 @@ class SimSession:
         self.inj_ev = asyncio.Event()    # set when an inject command is pending
         self.inj_attack = None           # pending attack label ('DoS'|...)
         self.inj_req_time = None         # wall-clock when inject was requested
+        self.inj_client_ts = None        # client ms since epoch (for round-trip)
         self.last_ts = 0.0               # last replayed timestamp (inject anchor)
 
     @staticmethod
@@ -171,6 +174,9 @@ class SimSession:
     # --- controlled only from _inbound task ---
     def process(self, msg):
         cmd = msg.get("cmd")
+        ids_log.log("click", actor="client", cmd=cmd, event_detail=msg.get("attack"),
+                    label=self.label, ids=self.ids_method,
+                    speed=round(self.speed, 1))
         if cmd == "pause":
             self.resume.clear()
         elif cmd == "resume":
@@ -185,7 +191,14 @@ class SimSession:
             if attack in ("DoS", "Fuzzy", "gear", "RPM"):
                 self.inj_attack = attack
                 self.inj_req_time = time.time()
+                self.inj_client_ts = msg.get("client_ts")  # ms since epoch (client)
                 self.inj_ev.set()
+                ids_log.log("inject_queued", actor="server", attack=attack,
+                            ok=True,
+                            client_to_server_ms=round((time.time()*1000 - (self.inj_client_ts or time.time()*1000)), 1))
+            else:
+                ids_log.log("inject_queued", actor="server", attack=attack,
+                            ok=False, reason="unknown attack")
         elif cmd in ("record_start", "record_stop"):
             # playback loop owns recorder: just request a state change
             self.rec_act = (
@@ -309,11 +322,18 @@ async def run_sim(ws, label: str, speed: float, source: str = "sim",
     # Lazily build the IDS engine (heavy: model load + clean baseline). Doing it
     # inline (not lazily per frame) keeps scoring fast and atomic.
     if session.ids_method != "off":
+        t0 = time.time()
+        ids_log.log("engine_load", actor="server", ids=session.ids_method,
+                    phase="start")
         try:
             session.engine = _make_ids_engine(session.ids_method)
             session.ids_ready = session.engine is not None
+            ids_log.log("engine_load", actor="server", ids=session.ids_method,
+                        ok=True, ms=(time.time() - t0) * 1000)
         except Exception as exc:
             session.ids_ready = False
+            ids_log.log("engine_load", actor="server", ids=session.ids_method,
+                        ok=False, ms=(time.time() - t0) * 1000, error=str(exc))
             await ws.send_text(json.dumps({
                 "type": "error",
                 "error": f"cannot load IDS '{session.ids_method}': {exc}",
@@ -335,12 +355,18 @@ async def run_sim(ws, label: str, speed: float, source: str = "sim",
                 "ids": session.ids_method,
                 "ids_ready": session.ids_ready,
             }))
+            ids_log.log("run_start", actor="server", run=session.run,
+                        label=session.label, ids=session.ids_method,
+                        ids_ready=session.ids_ready)
 
             gen = iter_batches(session.label, session.speed)
             try:
                 for batch, gap in gen:
                     if session.restart_requested or session.closed:
                         break
+                    if gap > 0.25:  # surface long idle gaps (they stall injection)
+                        ids_log.log("gap", actor="server", gap_ms=round(gap*1000, 1),
+                                    note="long idle before next batch")
                     await _sleep_wall(session, gap)
                     # honour pause also *after* the gap, before emitting
                     if not session.resume.is_set() or session.closed:
@@ -352,7 +378,10 @@ async def run_sim(ws, label: str, speed: float, source: str = "sim",
                         session.rec_tick(batch)
 
                     # inline IDS: score every replayed frame per-frame
+                    t_sc = time.time()
                     _score_batch(session, batch)
+                    ids_log.log("score", actor="engine", ids=session.ids_method,
+                                n=len(batch), ms=(time.time() - t_sc) * 1000)
 
                     sent += len(batch)
                     tps = sent / max(time.time() - t_start, 1e-6)
@@ -445,24 +474,41 @@ async def _drain_inject(ws, session: SimSession) -> None:
     attack = session.inj_intent()
     if not attack:
         return
+    queued_ms = (time.time() - (session.inj_req_time or time.time())) * 1000
+    ids_log.log("inject_process", actor="server", attack=attack,
+                queued_ms=round(queued_ms, 1),
+                note="inject picked up by playback loop")
     eng = session.engine
     if eng is None:
+        ids_log.log("inject_process", actor="server", attack=attack, ok=False,
+                    reason="no engine (ids off)")
         return
     req_time = session.inj_req_time or time.time()
     # bus position = last replayed ts of this run (fall back to 0)
     now = session.last_ts if getattr(session, "last_ts", None) else 0.0
     frames = eng.inject(attack, now)
     if not frames:
+        ids_log.log("inject_process", actor="server", attack=attack, ok=False,
+                    reason="no payload pool")
         return
 
     # batch-score the injected frames (same fast path as the replay batch)
+    t_sc = time.time()
     verdicts = eng.check_batch([(fr["hex"], fr["ts"], fr["payload"])
                                 for fr in frames])
+    score_ms = (time.time() - t_sc) * 1000
+    n_blocked = sum(1 for v in verdicts if v["block"])
     for fr, v in zip(frames, verdicts):
         fr["blocked"] = bool(v["block"])
         fr["reason"] = v["reason"]
         fr["score"] = v["score"]
         fr["detect_ms"] = round((time.time() - req_time) * 1000, 1)
+    roundtrip = round(time.time()*1000 - (session.inj_client_ts or time.time()*1000), 1)
+    ids_log.log("inject_done", actor="engine", attack=attack, ok=True,
+                frames=len(frames), blocked=n_blocked,
+                score_ms=round(score_ms, 2),
+                total_ms=round((time.time() - req_time) * 1000, 1),
+                roundtrip_ms=roundtrip)
 
     await ws.send_text(json.dumps({
         "type": "messages",
@@ -472,3 +518,6 @@ async def _drain_inject(ws, session: SimSession) -> None:
         "injected": True,
         "attack": attack,
     }))
+    ids_log.log("inject_sent", actor="server", attack=attack,
+                ok=True, frames=len(frames), blocked=n_blocked,
+                send_ms=round((time.time() - req_time) * 1000, 1))
