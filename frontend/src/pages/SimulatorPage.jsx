@@ -421,6 +421,7 @@ export default function SimulatorPage() {
                   <th style={{ width: 64 }}>Seq</th>
                   <th style={{ width: 74 }}>Hex</th>
                   <th>Reason</th>
+                  <th style={{ width: 96 }}>Detect</th>
                 </tr>
               </thead>
               <tbody>
@@ -429,11 +430,17 @@ export default function SimulatorPage() {
                     <td className="mono" style={{ color: 'var(--red)' }}>⚠{'…'}{fmtInt(q.seq - groundSeq)}</td>
                     <td className="mono" style={{ color: 'var(--accent)', fontWeight: 700 }}>{q.hex}</td>
                     <td className="mono" style={{ fontSize: 11.5, color: 'var(--orange)' }}>{q.reason || 'anomaly'}</td>
+                    <td className="mono" style={{
+                      fontSize: 11, fontWeight: 700,
+                      color: (q.detect_ms != null && q.detect_ms < 100) ? 'var(--green)' : 'var(--orange)',
+                    }}>
+                      {q.detect_ms != null ? `${q.detect_ms} ms` : '—'}
+                    </td>
                   </tr>
                 ))}
                 {quarantine.length === 0 && (
                   <tr>
-                    <td colSpan="3" style={{ textAlign: 'center', color: 'var(--text-2)', padding: '26px 10px' }}>
+                    <td colSpan="4" style={{ textAlign: 'center', color: 'var(--text-2)', padding: '26px 10px' }}>
                       No blocked frames yet.
                     </td>
                   </tr>

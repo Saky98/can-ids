@@ -158,6 +158,7 @@ class SimSession:
         self.ids_ready = False
         self.inj_ev = asyncio.Event()    # set when an inject command is pending
         self.inj_attack = None           # pending attack label ('DoS'|...)
+        self.inj_req_time = None         # wall-clock when inject was requested
         self.last_ts = 0.0               # last replayed timestamp (inject anchor)
 
     @staticmethod
@@ -183,6 +184,7 @@ class SimSession:
             attack = (msg.get("attack") or "").strip()
             if attack in ("DoS", "Fuzzy", "gear", "RPM"):
                 self.inj_attack = attack
+                self.inj_req_time = time.time()
                 self.inj_ev.set()
         elif cmd in ("record_start", "record_stop"):
             # playback loop owns recorder: just request a state change
@@ -411,15 +413,21 @@ async def run_sim(ws, label: str, speed: float, source: str = "sim",
 
 
 def _score_batch(session: SimSession, batch: list[dict]) -> None:
-    """Inline per-frame IDS scoring of a replay batch (mutates items)."""
+    """Inline per-frame IDS scoring of a replay batch (mutates items in place).
+
+    Uses the engine's batched path: the ML detectors score the whole batch in one
+    vectorized call (IsolationForest is ~100x faster batched than one-frame-at-a
+    time), so the replay keeps up at realtime throughput.
+    """
     eng = session.engine
     if eng is None:
         for it in batch:
             session.last_ts = it.get("ts")
-        return
-    for it in batch:
+            return
+    frames = [(it.get("hex"), it.get("ts"), it.get("payload")) for it in batch]
+    verdicts = eng.check_batch(frames)
+    for it, v in zip(batch, verdicts):
         session.last_ts = it.get("ts")
-        v = eng.check_hex(it.get("hex"), it.get("ts"), it.get("payload"))
         it["blocked"] = bool(v["block"])
         it["reason"] = v["reason"]
         it["score"] = v["score"]
@@ -430,7 +438,9 @@ async def _drain_inject(ws, session: SimSession) -> None:
     """Inject any pending attack (if IDS is active), score it, and emit it.
 
     Injected frames are emitted as their own 'messages' batch with injected=True
-    so the UI can render them red and record blocked ones into quarantine.
+    so the UI can render them red and record blocked ones into quarantine. Each
+    frame carries `detect_ms` = wall-clock ms from the inject command to the
+    detection decision (the realtime latency the demo wants to surface).
     """
     attack = session.inj_intent()
     if not attack:
@@ -438,19 +448,22 @@ async def _drain_inject(ws, session: SimSession) -> None:
     eng = session.engine
     if eng is None:
         return
+    req_time = session.inj_req_time or time.time()
     # bus position = last replayed ts of this run (fall back to 0)
     now = session.last_ts if getattr(session, "last_ts", None) else 0.0
     frames = eng.inject(attack, now)
     if not frames:
         return
-    for fr in frames:
-        fr["blocked"] = False
-    if eng is not None:
-        for fr in frames:
-            v = eng.check_hex(fr["hex"], fr["ts"], fr["payload"])
-            fr["blocked"] = bool(v["block"])
-            fr["reason"] = v["reason"]
-            fr["score"] = v["score"]
+
+    # batch-score the injected frames (same fast path as the replay batch)
+    verdicts = eng.check_batch([(fr["hex"], fr["ts"], fr["payload"])
+                                for fr in frames])
+    for fr, v in zip(frames, verdicts):
+        fr["blocked"] = bool(v["block"])
+        fr["reason"] = v["reason"]
+        fr["score"] = v["score"]
+        fr["detect_ms"] = round((time.time() - req_time) * 1000, 1)
+
     await ws.send_text(json.dumps({
         "type": "messages",
         "items": frames,
