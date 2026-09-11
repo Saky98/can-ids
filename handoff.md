@@ -190,6 +190,34 @@ predstavi 1 "glavnu" za live prikaz; ostale služe kao uporedno poređenje u rad
    trenira se samo na normal.csv.
 3. **One-Class SVM** — nenadgledan; isti feature-i, trenira samo na normal.csv.
 
+**ZAVRŠENO (09.2026)** — sve tri metode implementirane i pošteno izmerene (detalji u
+`heuristics.html` §15/§16):
+
+- **Isolation Forest** (`ids_isolation_forest.py`) — globalni model nad per-frame
+  z-score obeležjima (`gap_z`, `max_abs_z`, `n_over_2`); NE per-ID profilisanje i NE
+  per-(ID×1s-prozor), jer je jedan spoof okvir nevidljiv na nivou prozora (~1950 okvira/s).
+- **One-Class SVM** (`ids_one_class_svm.py`) — RBF, `nu=0.001` (trening je čist),
+  RobustScaler pre granice; deli isti feature-ekstraktor sa IF.
+- **Red-team / injection evaluacija** (`ids_injection.py` + 3 manifesta
+  `dataset /injection_manifest_1/2/3.json`) — ubrizgavanje pojedinačnih loših okvira u
+  čist tok je POŠTENIJA mera od coverage-a (napadni fajlovi su zasićeni → heuristika na
+  njima ima lažnih 100%, a realno 82–87%).
+
+**Uporedni rezultati (detekcija na 3 manifesta, prosek):**
+
+| Napad | Heuristika | Isolation Forest | One-Class SVM |
+|-------|-----------|------------------|---------------|
+| DoS   | 100%      | 100%             | 100%          |
+| Fuzzy | 85%       | 89.3%            | **96.7%**     |
+| gear  | 87%       | 77.3%            | **88.7%**     |
+| RPM   | 82%       | 78.3%            | **87.0%**     |
+
+FPR: 0% na VALID (sve tri); 0.001–0.013% na TEST-normal (1–2 okvira od ~148k).
+
+**Zaključak poređenja:** One-Class SVM najbolji na svakoj kategoriji (glatka granica
+gustine najbolje razdvaja pojedinačne spoof okvire); heuristika konkurentna na gear/RPM
+(zbog "≥3 uzastopna" ojačanja), IF zaostaje na suptilnim single-frame spoof-ovima.
+
 Važne naučne odluke (koje NE smemo zaboraviti kod implementacije):
 - Sva tri dele **isti feature-ekstraktor** (po CAN ID / sekundi: rate, pravilnost
   ritma, promena vrijednosti) i **istu podelu**.
@@ -271,7 +299,38 @@ Svi modovi dele isti **stream interfejs** backenda; UI se ne menja, samo se preb
   `Timestamp, CAN_ID, DLC, B0..B7, Label` (CAN_ID sa `0x` prefiksom).
 - Izlaz u `dataset /normalized/`: `normal.csv`, `DoS.csv`, `Fuzzy.csv`, `gear.csv`, `RPM.csv`
   (ukupno ~15.2M poruka, ~874MB).
-- Početak `backend/main.py` (FastAPI) — na skici; treba doraditi API za analizu + simulator stream.
+- `backend/main.py` (FastAPI) — REST analiza + `/ws/stream` (simulator replay + live dev bridge).
+
+### Live IDS + injection u Simulatoru (ZAVRŠENO — 09.2026)
+- **`backend/ids/ids_runtime.py`** — objedinjeni per-frame `IdsEngine` koji obavija sve tri
+  metode; skoruje svaki replej okvir u realnom vremenu (drži per-ID gap/step stanje).
+- **`stream.py`** — `run_sim(..., ids_method=...)`; `/ws/stream` prima `ids=<method>`;
+  komanda `{"cmd":"inject","attack":"DoS|Fuzzy|gear|RPM"}` ubacuje napad na trenutnu poziciju.
+  DoS = burst od 8 okvira (2ms), ostali = 1 okvir. Payload-i su PRAVI outlieri iz 3 manifesta.
+- **Frontend `SimulatorPage.jsx`** — IDS selektor (off/heuristic/IF/SVM), 4 "inject" dugmeta,
+  ubrizgani okviri crveno, blokirani idu u **karantin** sa kolonom "Detect (ms)".
+
+### Latency / brzina (mereno — 09.2026)
+Ključni problem koji se pojavio u live prikazu (i koren "bagovanja"):
+
+- **Isolation Forest je bio katastrofalno spor kad se zove per-frame:** ~23.5 ms/okvir
+  (42 okvira/s, a magistrala ~1950/s). Uzrok: `decision_function` preko 300 zasebnih
+  stabala ima ogroman fiksni overhead PO POZIVU kad se zove za jedan okvir.
+- **Popravka:** `check_batch()` skoruje ceo batch (200 okvira) u JEDNOM vektorizovanom
+  pozivu → IF pada na ~0.055 ms/okvir (18k okvira/s), SVM ~0.066 ms/okvir, heuristika
+  ~0.024 ms/okvir. Rezultati IDENTIČNI (0/200 nepoklapanja block odluka).
+
+**Izmerena latencija po okviru (batched):**
+
+| Metoda | µs/okvir | okvira/s |
+|--------|---------|----------|
+| Heuristic       | ~24   | ~42 000 |
+| Isolation Forest| ~55   | ~18 000 |
+| One-Class SVM   | ~66   | ~15 000 |
+
+**End-to-end "klik → karantin" (inject DoS, 8/8 uhvaćeno, preko WebSocket-a):**
+heuristic ~5ms, one-class svm ~15ms, isolation forest ~57ms (dominantna je ~50ms
+tick playback petlje, ne samo skorovanje).
 
 ### Otvorena pitanja pre nastavka
 1. Payload — app pokazuje sirove hex + statističke šablone; fizičko značenje (brzina/RPM...)
