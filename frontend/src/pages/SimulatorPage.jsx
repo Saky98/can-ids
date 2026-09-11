@@ -24,7 +24,7 @@ const IDS_METHODS = [
 const INJECT_ATTACKS = ['DoS', 'Fuzzy', 'gear', 'RPM'];
 const SPEED_MIN = 0.1;
 const SPEED_MAX = 2000;
-const RING = 200;      // keep at most this many recent messages in the table
+const RING = 60;       // keep at most this many recent messages in the table (small DOM = fast render)
 const QUARANTINE_MAX = 200;
 
 const wsUrl = () => {

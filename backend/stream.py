@@ -58,7 +58,7 @@ MAX_GAP_S = 2.0
 DEFAULT_SPEED = 25.0
 MIN_SPEED = 0.1
 MAX_SPEED = 10000.0
-BATCH = 200            # rows per outbound message frame
+BATCH = 60             # rows per outbound message frame (smaller = less socket backpressure)
 SS = 0.05              # async sleep quantum -> responsive pause/restart
 
 IDS_METHODS = ("heuristic", "isolation_forest", "one_class_svm", "off")
@@ -159,9 +159,7 @@ class SimSession:
         self.engine = None               # IdsEngine when ids_method != 'off'
         self.ids_ready = False
         self.inj_ev = asyncio.Event()    # set when an inject command is pending
-        self.inj_attack = None           # pending attack label ('DoS'|...)
-        self.inj_req_time = None         # wall-clock when inject was requested
-        self.inj_client_ts = None        # client ms since epoch (for round-trip)
+        self.inj_queue = []              # FIFO of pending attacks: (attack, req_time, client_ts)
         self.last_ts = 0.0               # last replayed timestamp (inject anchor)
 
     @staticmethod
@@ -189,13 +187,19 @@ class SimSession:
         elif cmd == "inject":
             attack = (msg.get("attack") or "").strip()
             if attack in ("DoS", "Fuzzy", "gear", "RPM"):
-                self.inj_attack = attack
-                self.inj_req_time = time.time()
-                self.inj_client_ts = msg.get("client_ts")  # ms since epoch (client)
+                # FIFO queue: rapid successive clicks must NOT overwrite each
+                # other (the old single `inj_attack` slot dropped earlier clicks
+                # when the worker was still busy — e.g. IsolationForest ~24ms
+                # per injection). Each queued item keeps its own timestamps.
+                self.inj_queue.append((
+                    attack,
+                    time.time(),
+                    msg.get("client_ts"),   # ms since epoch (client), or None
+                ))
                 self.inj_ev.set()
                 ids_log.log("inject_queued", actor="server", attack=attack,
-                            ok=True,
-                            client_to_server_ms=round((time.time()*1000 - (self.inj_client_ts or time.time()*1000)), 1))
+                            ok=True, queue_len=len(self.inj_queue),
+                            client_to_server_ms=round((time.time()*1000 - (msg.get("client_ts") or time.time()*1000)), 1))
             else:
                 ids_log.log("inject_queued", actor="server", attack=attack,
                             ok=False, reason="unknown attack")
@@ -209,13 +213,13 @@ class SimSession:
             self.resume.set()          # if paused, proceed so recorder can tick
 
     # --- IDS / inject: owned by the playback loop ---
-    def inj_intent(self):
-        """Return a pending attack label, else None (consumes the event)."""
-        if self.inj_ev.is_set():
-            attack = self.inj_attack
-            self.inj_ev.clear()
-            self.inj_attack = None
-            return attack
+    def inj_pop(self):
+        """Pop and return the next pending (attack, req_time, client_ts), else None."""
+        if self.inj_queue:
+            item = self.inj_queue.pop(0)
+            if not self.inj_queue:
+                self.inj_ev.clear()
+            return item
         return None
 
     # --- owned by the playback loop (only caller) ---
@@ -395,6 +399,11 @@ async def run_sim(ws, label: str, speed: float, source: str = "sim",
                         "tps": round(tps, 1),
                         "done": sent,
                     }))
+                    # Yield to the event loop so the inject worker gets a turn
+                    # between replay sends. Otherwise a run of replay batches
+                    # monopolizes the socket and an injected frame is queued
+                    # behind them (seen up to ~2s of send backpressure).
+                    await asyncio.sleep(0)
 
                     # honour control intents (record start/stop) queued meanwhile
                     await _recorder_drain(ws, session, source=capture_source)
@@ -479,15 +488,16 @@ async def _inject_worker(ws, session: SimSession) -> None:
     silent stretch of the recording waited up to ~2s (MAX_GAP_S) in the queue.
     """
     while not session.closed:
-        attack = session.inj_intent()
-        if attack is None:
+        item = session.inj_pop()
+        if item is None:
             # wait for the next inject command (or shutdown)
             await session.inj_ev.wait()
             if session.closed:
                 break
             continue
 
-        queued_ms = (time.time() - (session.inj_req_time or time.time())) * 1000
+        attack, req_time, client_ts = item
+        queued_ms = (time.time() - (req_time or time.time())) * 1000
         ids_log.log("inject_process", actor="server", attack=attack,
                     queued_ms=round(queued_ms, 1),
                     note="inject picked up immediately")
@@ -496,7 +506,6 @@ async def _inject_worker(ws, session: SimSession) -> None:
             ids_log.log("inject_process", actor="server", attack=attack, ok=False,
                         reason="no engine (ids off)")
             continue
-        req_time = session.inj_req_time or time.time()
         now = session.last_ts if getattr(session, "last_ts", None) else 0.0
         frames = eng.inject(attack, now)
         if not frames:
@@ -515,7 +524,7 @@ async def _inject_worker(ws, session: SimSession) -> None:
             fr["reason"] = v["reason"]
             fr["score"] = v["score"]
             fr["detect_ms"] = round((time.time() - req_time) * 1000, 1)
-        roundtrip = round(time.time()*1000 - (session.inj_client_ts or time.time()*1000), 1)
+        roundtrip = round(time.time()*1000 - (client_ts or time.time()*1000), 1)
         ids_log.log("inject_done", actor="engine", attack=attack, ok=True,
                     frames=len(frames), blocked=n_blocked,
                     score_ms=round(score_ms, 2),
