@@ -339,6 +339,10 @@ async def run_sim(ws, label: str, speed: float, source: str = "sim",
                 "error": f"cannot load IDS '{session.ids_method}': {exc}",
             }))
 
+    # Start the inject worker AFTER the engine is loaded, so it never races a
+    # half-built engine when the user clicks immediately after Start.
+    injector = asyncio.create_task(_inject_worker(ws, session))
+
     try:
         while not session.closed:
             if session.restart_requested:                 # restart same run
@@ -395,9 +399,6 @@ async def run_sim(ws, label: str, speed: float, source: str = "sim",
                     # honour control intents (record start/stop) queued meanwhile
                     await _recorder_drain(ws, session, source=capture_source)
 
-                    # inject any pending attack at the current bus position
-                    await _drain_inject(ws, session)
-
             except FileNotFoundError:
                 await ws.send_text(json.dumps(
                     {"type": "error", "error": f"unknown label: {session.label}"}))
@@ -439,6 +440,11 @@ async def run_sim(ws, label: str, speed: float, source: str = "sim",
             await reader
         except (asyncio.CancelledError, Exception):
             pass
+        injector.cancel()
+        try:
+            await injector
+        except (asyncio.CancelledError, Exception):
+            pass
 
 
 def _score_batch(session: SimSession, batch: list[dict]) -> None:
@@ -463,61 +469,67 @@ def _score_batch(session: SimSession, batch: list[dict]) -> None:
         it["injected"] = False
 
 
-async def _drain_inject(ws, session: SimSession) -> None:
-    """Inject any pending attack (if IDS is active), score it, and emit it.
+async def _inject_worker(ws, session: SimSession) -> None:
+    """Continuously drain pending injections the instant they arrive.
 
-    Injected frames are emitted as their own 'messages' batch with injected=True
-    so the UI can render them red and record blocked ones into quarantine. Each
-    frame carries `detect_ms` = wall-clock ms from the inject command to the
-    detection decision (the realtime latency the demo wants to surface).
+    Runs as its own task so an injection is handled IMMEDIATELY when the client
+    clicks, independent of the playback loop's replay pacing. This fixes the
+    "click DoS then nothing for seconds" symptom: the old design only drained
+    injections AFTER `_sleep_wall(gap)` returned, so a click landing during a
+    silent stretch of the recording waited up to ~2s (MAX_GAP_S) in the queue.
     """
-    attack = session.inj_intent()
-    if not attack:
-        return
-    queued_ms = (time.time() - (session.inj_req_time or time.time())) * 1000
-    ids_log.log("inject_process", actor="server", attack=attack,
-                queued_ms=round(queued_ms, 1),
-                note="inject picked up by playback loop")
-    eng = session.engine
-    if eng is None:
-        ids_log.log("inject_process", actor="server", attack=attack, ok=False,
-                    reason="no engine (ids off)")
-        return
-    req_time = session.inj_req_time or time.time()
-    # bus position = last replayed ts of this run (fall back to 0)
-    now = session.last_ts if getattr(session, "last_ts", None) else 0.0
-    frames = eng.inject(attack, now)
-    if not frames:
-        ids_log.log("inject_process", actor="server", attack=attack, ok=False,
-                    reason="no payload pool")
-        return
+    while not session.closed:
+        attack = session.inj_intent()
+        if attack is None:
+            # wait for the next inject command (or shutdown)
+            await session.inj_ev.wait()
+            if session.closed:
+                break
+            continue
 
-    # batch-score the injected frames (same fast path as the replay batch)
-    t_sc = time.time()
-    verdicts = eng.check_batch([(fr["hex"], fr["ts"], fr["payload"])
-                                for fr in frames])
-    score_ms = (time.time() - t_sc) * 1000
-    n_blocked = sum(1 for v in verdicts if v["block"])
-    for fr, v in zip(frames, verdicts):
-        fr["blocked"] = bool(v["block"])
-        fr["reason"] = v["reason"]
-        fr["score"] = v["score"]
-        fr["detect_ms"] = round((time.time() - req_time) * 1000, 1)
-    roundtrip = round(time.time()*1000 - (session.inj_client_ts or time.time()*1000), 1)
-    ids_log.log("inject_done", actor="engine", attack=attack, ok=True,
-                frames=len(frames), blocked=n_blocked,
-                score_ms=round(score_ms, 2),
-                total_ms=round((time.time() - req_time) * 1000, 1),
-                roundtrip_ms=roundtrip)
+        queued_ms = (time.time() - (session.inj_req_time or time.time())) * 1000
+        ids_log.log("inject_process", actor="server", attack=attack,
+                    queued_ms=round(queued_ms, 1),
+                    note="inject picked up immediately")
+        eng = session.engine
+        if eng is None:
+            ids_log.log("inject_process", actor="server", attack=attack, ok=False,
+                        reason="no engine (ids off)")
+            continue
+        req_time = session.inj_req_time or time.time()
+        now = session.last_ts if getattr(session, "last_ts", None) else 0.0
+        frames = eng.inject(attack, now)
+        if not frames:
+            ids_log.log("inject_process", actor="server", attack=attack, ok=False,
+                        reason="no payload pool")
+            continue
 
-    await ws.send_text(json.dumps({
-        "type": "messages",
-        "items": frames,
-        "tps": None,
-        "done": None,
-        "injected": True,
-        "attack": attack,
-    }))
-    ids_log.log("inject_sent", actor="server", attack=attack,
-                ok=True, frames=len(frames), blocked=n_blocked,
-                send_ms=round((time.time() - req_time) * 1000, 1))
+        # batch-score the injected frames (same fast path as the replay batch)
+        t_sc = time.time()
+        verdicts = eng.check_batch([(fr["hex"], fr["ts"], fr["payload"])
+                                    for fr in frames])
+        score_ms = (time.time() - t_sc) * 1000
+        n_blocked = sum(1 for v in verdicts if v["block"])
+        for fr, v in zip(frames, verdicts):
+            fr["blocked"] = bool(v["block"])
+            fr["reason"] = v["reason"]
+            fr["score"] = v["score"]
+            fr["detect_ms"] = round((time.time() - req_time) * 1000, 1)
+        roundtrip = round(time.time()*1000 - (session.inj_client_ts or time.time()*1000), 1)
+        ids_log.log("inject_done", actor="engine", attack=attack, ok=True,
+                    frames=len(frames), blocked=n_blocked,
+                    score_ms=round(score_ms, 2),
+                    total_ms=round((time.time() - req_time) * 1000, 1),
+                    roundtrip_ms=roundtrip)
+
+        await ws.send_text(json.dumps({
+            "type": "messages",
+            "items": frames,
+            "tps": None,
+            "done": None,
+            "injected": True,
+            "attack": attack,
+        }))
+        ids_log.log("inject_sent", actor="server", attack=attack,
+                    ok=True, frames=len(frames), blocked=n_blocked,
+                    send_ms=round((time.time() - req_time) * 1000, 1))
