@@ -63,6 +63,8 @@ export default function SimulatorPage() {
   const quarantineRef = useRef([]);
   const blockedCountRef = useRef(0);
   const injectedCountRef = useRef(0);
+  const rafRef = useRef(null);          // pending requestAnimationFrame for table render
+  const [lastInjection, setLastInjection] = useState(null);  // latest injected batch (immediate)
 
   const pushQuarantine = (items) => {
     const blocked = items.filter((it) => it.blocked);
@@ -83,6 +85,18 @@ export default function SimulatorPage() {
     };
     setEventLog((prev) => [rec, ...prev].slice(0, 60));
     console.log('[ids-log]', rec);
+  };
+
+  const scheduleTableRender = () => {
+    // Coalesce table re-renders to the next animation frame: the replay sends
+    // ~10 batches/s of 200 frames each, and re-rendering a 200-row table on
+    // every one starves the UI and delays injected frames. The ring data is
+    // always current in ringRef; we just paint at most once per frame.
+    if (rafRef.current != null) return;
+    rafRef.current = requestAnimationFrame(() => {
+      rafRef.current = null;
+      setMsgs(ringRef.current.slice(0, RING));
+    });
   };
 
   // ---- (re)open stream whenever controls change or when started/stopped ----
@@ -106,6 +120,7 @@ export default function SimulatorPage() {
     setQuarantine([]);
     setBlockedCount(0);
     setInjectedCount(0);
+    setLastInjection(null);
 
     const ws = new WebSocket(
       `${wsUrl()}?source=sim&label=${encodeURIComponent(label)}&speed=${speed}` +
@@ -143,6 +158,8 @@ export default function SimulatorPage() {
           injectedCountRef.current += items.length;
           setInjectedCount(injectedCountRef.current);
           items.forEach((it) => { it.injected = true; });
+          // IMMEDIATE: injected frames are shown right away (not throttled)
+          setLastInjection({ attack: msg.attack, frames: items.length, blocked: nBlocked, detect_ms: dt, at: performance.now() });
           logEvent('recv:injected', {
             attack: msg.attack, frames: items.length, blocked: nBlocked,
             detect_ms: dt,
@@ -159,9 +176,12 @@ export default function SimulatorPage() {
         ringRef.current = [...withSeq, ...ringRef.current].slice(0, RING);
         const oldest = ringRef.current[ringRef.current.length - 1];
         setGroundSeq(oldest ? oldest.seq : streamSeq.current);
-        setMsgs(ringRef.current);
-        // quarantine: collect blocked frames
+        // quarantine: collect blocked frames (immediate)
         pushQuarantine(withSeq);
+        // throttle the *replay table* render to ~once per animation frame, so a
+        // fast stream doesn't starve the browser and delay injected-frame
+        // visibility. The ring data is always up-to-date in ringRef.
+        scheduleTableRender();
       } else if (msg.type === 'end') {
         setDone(msg.items_done || 0);
       } else if (msg.type === 'error') {
@@ -178,6 +198,10 @@ export default function SimulatorPage() {
     return () => {
       try { ws.close(); } catch { /* already closed */ }
       wsRef.current = null;
+      if (rafRef.current != null) {
+        cancelAnimationFrame(rafRef.current);
+        rafRef.current = null;
+      }
     };
   }, [running, label, speed, ids]);
 
@@ -350,6 +374,28 @@ export default function SimulatorPage() {
         <StatCard title="Injected" value={fmtInt(injectedCount)} accent={false} />
         <StatCard title="Blocked (quarantine)" value={fmtInt(blockedCount)} accent={false} />
       </div>
+
+      {/* ---------------- Last injection (immediate feedback) ---------------- */}
+      {lastInjection && (
+        <div className="card" style={{
+          marginBottom: 16, padding: '10px 14px',
+          background: 'rgba(248,81,73,.12)', border: '1px solid rgba(248,81,73,.4)',
+          display: 'flex', alignItems: 'center', gap: 12, flexWrap: 'wrap',
+        }}>
+          <span style={{ fontWeight: 700, color: 'var(--red)' }}>⚡ {lastInjection.attack} injected</span>
+          <span className="mono" style={{ color: 'var(--text-1)', fontSize: 12 }}>
+            {lastInjection.blocked} / {lastInjection.frames} frames blocked
+          </span>
+          {lastInjection.detect_ms != null && (
+            <span className="mono" style={{ color: 'var(--green)', fontSize: 12, fontWeight: 700 }}>
+              detect {lastInjection.detect_ms} ms
+            </span>
+          )}
+          <span className="mono" style={{ color: 'var(--text-2)', fontSize: 11 }}>
+            at +{Math.round(lastInjection.at)}ms
+          </span>
+        </div>
+      )}
 
       <div style={{ display: 'grid', gridTemplateColumns: '2fr 1fr', gap: 16, alignItems: 'start' }}>
         {/* ---------------- Live message table ---------------- */}
