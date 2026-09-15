@@ -650,6 +650,30 @@ DoS / Fuzzy / gear / RPM  → isključivo evaluacija (NIKAD u trening)</pre>
      najopterećenijom magistralom → IDS zadovoljava zahtev za skoro-realtime. Disclaimer:
      brojke su za čist Python na desktopu; na ESP32 (live hardver) model treba kvantizovati.
      Tačan broj msg/s za Polo 6R nije javno dokumentovan — koristimo tipične raspone.</div>
+
+  <h3 style="margin-top:6px">Centralna evaluacija + interleaved manifest test (09.2026)</h3>
+  <p><code>backend/ids/run_all_evaluation.py</code> — jedan poziv pokreće sve 3 metode i
+     upisuje <code>evaluation_report.html</code> (podela, FPR, coverage, interleaved manifest,
+     vremenska efikasnost). <code>run_manifest_interleaved.py</code> radi samo manifest test.</p>
+
+  <h4 style="margin-top:8px">Interleaved manifest test (teži, na punom toku)</h4>
+  <p>Manifest okviri se ubacuju u ceo <code>normal.csv</code> (~989k okvira) po timestamp-u i
+     ceo tok se skoruje <b>redom</b> (batch <code>check_batch</code>, per-frame odluke identične
+     1-po-1). Rezultati se malo razlikuju od "prethodni okvir istog ID-a" aproksimacije.</p>
+  <table>
+    <tr><th>Napad</th><th>Heuristika (per-frame)</th><th>Isolation Forest</th><th>One-Class SVM</th></tr>
+    <tr><td>DoS</td><td>100% (30/30)</td><td>100% (30/30)</td><td>100% (30/30)</td></tr>
+    <tr><td>Fuzzy</td><td>100% (300/300)</td><td>89.3% (268/300)</td><td><b>96.7%</b> (290/300)</td></tr>
+    <tr><td>gear</td><td>100% (300/300)</td><td>77.3% (232/300)</td><td><b>88.7%</b> (266/300)</td></tr>
+    <tr><td>RPM</td><td>100% (300/300)</td><td>78.3% (235/300)</td><td><b>87.0%</b> (261/300)</td></tr>
+  </table>
+
+  <h4 style="margin-top:8px">Dve verzije heuristike</h4>
+  <p>Offline <code>score_windows</code> = 1s prozori (test3 traži ≥3 uzastopna OOB bajta →
+     propušta pojedinačni spoof). Live <code>_check_heuristic</code> = per-frame (bez MIN_CONSEC).
+     <b>Izveštaj sada koristi per-frame</b> (isto kao Simulator): 0 FP/148 331 + 100% na napadima.</p>
+  <p><b>Struktura manifesta (po 1):</b> DoS = 10 burst-ova (10 događaja); Fuzzy/gear/RPM =
+     10 trial-ova × 10 pojedinačnih (100 događaja). Kroz 3 manifesta → DoS 30, ostali po 300.</p>
 </div>
 
 </div>

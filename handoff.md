@@ -203,20 +203,35 @@ predstavi 1 "glavnu" za live prikaz; ostale služe kao uporedno poređenje u rad
   čist tok je POŠTENIJA mera od coverage-a (napadni fajlovi su zasićeni → heuristika na
   njima ima lažnih 100%, a realno 82–87%).
 
-**Uporedni rezultati (detekcija na 3 manifesta, prosek):**
+- **Red-team / injection evaluacija** (`ids_injection.py` + 3 manifesta
+  `dataset /injection_manifest_1/2/3.json`) — ubrizgavanje pojedinačnih loših okvira u
+  čist tok je POŠTENIJA mera od coverage-a (napadni fajlovi su zasićeni → heuristika na
+  njima ima lažnih 100%, a realno 82–87%).
+
+**Uporedni rezultati — detekcija ubrizganih napada, INTERLEAVED na PUNOM toku
+(988 871 čistih okvira; manifest okviri ubacuju se po timestamp-u i ceo tok se skoruje
+redom, live režim). Heuristika je per-frame (live `_check_heuristic`, bez MIN_CONSEC).**
 
 | Napad | Heuristika | Isolation Forest | One-Class SVM |
 |-------|-----------|------------------|---------------|
-| DoS   | 100%      | 100%             | 100%          |
-| Fuzzy | 85%       | 89.3%            | **96.7%**     |
-| gear  | 87%       | 77.3%            | **88.7%**     |
-| RPM   | 82%       | 78.3%            | **87.0%**     |
+| DoS   | 100% (30/30)   | 100% (30/30)   | 100% (30/30)   |
+| Fuzzy | 100% (300/300) | 89.3% (268/300)| **96.7%** (290/300) |
+| gear  | 100% (300/300) | 77.3% (232/300)| **88.7%** (266/300) |
+| RPM   | 100% (300/300) | 78.3% (235/300)| **87.0%** (261/300) |
 
 FPR: 0% na VALID (sve tri); 0.001–0.013% na TEST-normal (1–2 okvira od ~148k).
+Heuristika per-frame: **0 FP / 148 331** na TEST-normal i **100% na svim napadima**.
 
-**Zaključak poređenja:** One-Class SVM najbolji na svakoj kategoriji (glatka granica
-gustine najbolje razdvaja pojedinačne spoof okvire); heuristika konkurentna na gear/RPM
-(zbog "≥3 uzastopna" ojačanja), IF zaostaje na suptilnim single-frame spoof-ovima.
+**Napomena (dve verzije heuristike):** offline `ids_heuristic.py::score_windows` radi na
+**1s prozorima** (granulat = sekund, test3 traži ≥3 uzastopna out-of-range bajta → propušta
+pojedinačni spoof). Live `ids_runtime.py::_check_heuristic` radi **per-frame** (bez MIN_CONSEC,
+granulat = okvir). **Izveštaj sada koristi live per-frame verziju** (isto kao Simulator, 100%
++ 0 FP), a coverage (sekcija 3) i dalje pokazuje da window-granulat daje "velikodušnijih" 100%.
+
+**Struktura manifesta (po 1 manifestu):** DoS = 10 burst-ova × 8 okvira (10 događaja);
+Fuzzy/gear/RPM = 10 trial-ova × 10 pojedinačnih (100 događaja). Kroz 3 manifesta →
+DoS 30 događaja, ostali po 300. (trial = nezavisna ponavljanja istog testa.)
+
 
 Važne naučne odluke (koje NE smemo zaboraviti kod implementacije):
 - Sva tri dele **isti feature-ekstraktor** (po CAN ID / sekundi: rate, pravilnost
@@ -309,6 +324,17 @@ Svi modovi dele isti **stream interfejs** backenda; UI se ne menja, samo se preb
   DoS = burst od 8 okvira (2ms), ostali = 1 okvir. Payload-i su PRAVI outlieri iz 3 manifesta.
 - **Frontend `SimulatorPage.jsx`** — IDS selektor (off/heuristic/IF/SVM), 4 "inject" dugmeta,
   ubrizgani okviri crveno, blokirani idu u **karantin** sa kolonom "Detect (ms)".
+
+### Centralna evaluaciona skripta + izveštaj (09.2026)
+- **`backend/ids/run_all_evaluation.py`** — JEDAN poziv pokreće SVG metode + upisuje sve u
+  `evaluation_report.html`: podela, FPR, coverage, interleaved manifest detekcija (na punom
+  900k toku), vremenska efikasnost. Pokretanje: `../../.venv/bin/python run_all_evaluation.py`.
+- **`backend/ids/run_manifest_interleaved.py`** — samo interleaved manifest test (bez FPR/coverage),
+  brži; upisuje `manifest_interleaved_report.html`.
+- **Interleaved manifest test** (`_manifest_interleaved`): manifest okviri se ubacuju u pun
+  normal.csv (~989k) po timestamp-u i ceo tok se skoruje **redom** (batch-ovan `check_batch`,
+  per-frame odluke identične 1-po-1). Ovo je teži/realniji test od "prethodni okvir istog ID-a"
+  aproksimacije — rezultati se malo razlikuju (IF/SVM blago pomeraju na gear/RPM).
 
 ### Latency / brzina (mereno — 09.2026)
 Ključni problem koji se pojavio u live prikazu (i koren "bagovanja"):

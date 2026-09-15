@@ -1,0 +1,29 @@
+<!DOCTYPE html><html lang='sr'><head><meta charset='utf-8'>
+<title>Detekcija ubrizganih napada — interleaved (900k)</title>
+<style>
+body{font-family:system-ui,Arial,sans-serif;max-width:900px;margin:30px auto;padding:0 20px;color:#e6edf3;background:#0d1117}
+h1{font-size:22px}h2{font-size:17px;margin-top:28px;border-bottom:1px solid #30363d;padding-bottom:5px}
+table{border-collapse:collapse;width:100%;margin:12px 0;font-size:14px}
+th,td{border:1px solid #30363d;padding:7px 10px;text-align:center}
+th{background:#1f2630;color:#9ba7b4}td{color:#e6edf3}
+td.best{background:rgba(63,185,80,.15);color:#3fb950;font-weight:700}
+.mut{color:#6e7681;font-size:13px}
+</style></head><body>
+<h1>Detekcija ubrizganih napada — interleaved na punom toku</h1>
+<div class='mut'>Generisano: 2026-09-15 16:13:23 · normalni tok: 988,871 okvira · 3 manifesta ubrizgana po timestamp-u, ceo tok skorovan redom.</div>
+<h2>Detekcija (prosek kroz 3 manifesta)</h2>
+<table><tr><th>Napad</th><th>Heuristika</th><th>Isolation Forest</th><th>One-Class SVM</th></tr>
+<tr><td>DoS</td><td class='best'>100.0% <span class='mut'>(10/10)</span></td><td class='best'>100.0% <span class='mut'>(10/10)</span></td><td class='best'>100.0% <span class='mut'>(10/10)</span></td></tr>
+<tr><td>Fuzzy</td><td class='best'>100.0% <span class='mut'>(100/100)</span></td><td>89.0% <span class='mut'>(89/100)</span></td><td>98.0% <span class='mut'>(98/100)</span></td></tr>
+<tr><td>gear</td><td class='best'>100.0% <span class='mut'>(100/100)</span></td><td>79.0% <span class='mut'>(79/100)</span></td><td>91.0% <span class='mut'>(91/100)</span></td></tr>
+<tr><td>RPM</td><td class='best'>100.0% <span class='mut'>(100/100)</span></td><td>82.0% <span class='mut'>(82/100)</span></td><td>89.0% <span class='mut'>(89/100)</span></td></tr>
+</table>
+<div class='mut'>DoS = 10 burst-ova × 3 manifesta; Fuzzy/gear/RPM = 100 pojedinačnih × 3 manifesta. Interleaved: okviri su stvarno ubačeni u pun tok, pa je gap/step računat od stvarnog prethodnog okvira.</div>
+<h2>Vremenska efikasnost (skorovanje celog toka + ubrizganih)</h2>
+<table><tr><th>Metoda</th><th>vreme (s)</th><th>okvira</th><th>µs / okvir</th></tr>
+<tr><td>Heuristika</td><td>26.9</td><td>990,011</td><td>27.2</td></tr>
+<tr><td>Isolation Forest</td><td>150.4</td><td>990,011</td><td>151.9</td></tr>
+<tr><td>One-Class SVM</td><td>76.0</td><td>990,011</td><td>76.8</td></tr>
+</table>
+<div class='mut'>Vreme za skorovanje celog normalnog toka sa ubrizganim okvirima (per-frame, live režim).</div>
+</body></html>

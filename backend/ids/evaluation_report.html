@@ -1,0 +1,51 @@
+<!DOCTYPE html><html lang='sr'><head><meta charset='utf-8'>
+<title>IDS evaluacija — Car-Hacking</title>
+<style>
+body{font-family:system-ui,-apple-system,Arial,sans-serif;max-width:1000px;margin:30px auto;padding:0 20px;color:#e6edf3;background:#0d1117}
+h1{font-size:24px}h2{font-size:19px;margin-top:34px;border-bottom:1px solid #30363d;padding-bottom:6px}
+table{border-collapse:collapse;width:100%;margin:14px 0;font-size:14px}
+th,td{border:1px solid #30363d;padding:7px 10px;text-align:center}
+th{background:#1f2630;color:#9ba7b4}td{color:#e6edf3}
+td.best{background:rgba(63,185,80,.15);color:#3fb950;font-weight:700}
+.mut{color:#6e7681;font-size:13px}
+.mono{font-family:ui-monospace,Menlo,Consolas,monospace}
+</style></head><body>
+<h1>IDS evaluacija — rezultati</h1>
+<div class='mut'>Generisano: 2026-09-15 17:59:05 · izvor: <span class='mono'>backend/ids/run_all_evaluation.py</span></div>
+<h2>1 · Podela podataka</h2>
+<table><tr><th>TRAIN</th><th>VALID</th><th>TEST</th></tr>
+<tr><td>692,209</td><td>148,331</td><td>148,331</td></tr></table>
+<div class='mut'>hronološka podela normal.csv (no-leak); napadi se koriste samo za evaluaciju.</div>
+<h2>2 · Stopa lažnih pozitiva (FPR)</h2>
+<table><tr><th>Metoda</th><th>VALID (flagged/frames)</th><th>TEST-normal</th></tr>
+<tr><td>Heuristika</td><td>0/148,331 (0.00%)</td><td>0/148,331 (0.00%)</td></tr>
+<tr><td>Isolation Forest</td><td>0/148,331 (0.00%)</td><td>2/148,331 (0.00%)</td></tr>
+<tr><td>One-Class SVM</td><td>0/148,331 (0.00%)</td><td>2/148,331 (0.00%)</td></tr>
+</table>
+<div class='mut'>Cilj je FPR ≈ 0 na čistom saobraćaju; sve tri metode mere per-frame (svaki okvir se pojedinačno skoruje, kao u live Simulatoru).</div>
+<h2>3 · Pokrivenost celih napadnih fajlova (coverage, per-frame)</h2>
+<table><tr><th>Napad</th><th>Heuristika</th><th>Isolation Forest</th><th>One-Class SVM</th></tr>
+<tr><td>DoS</td><td>28.50%</td><td>16.82%</td><td>36.02%</td></tr>
+<tr><td>Fuzzy</td><td>29.43%</td><td>16.80%</td><td>36.60%</td></tr>
+<tr><td>gear</td><td>32.62%</td><td>15.32%</td><td>30.96%</td></tr>
+<tr><td>RPM</td><td>28.46%</td><td>14.62%</td><td>25.89%</td></tr>
+</table>
+<div class='mut'>Sve tri metode mere per-frame (svaki okvir se pojedinačno skoruje). 'Velikodušna' kontinuitet mera — ne meri osetljivost na pojedinačne okvire; pravi test je sekcija 4.</div>
+<h2>4 · Detekcija ubrizganih napada (interleaved na punom toku)</h2>
+<table><tr><th>Napad</th><th>Heuristika</th><th>Isolation Forest</th><th>One-Class SVM</th></tr>
+<tr><td>DoS</td><td class='best'>100.0% <span class='mut'>(30/30)</span></td><td class='best'>100.0% <span class='mut'>(30/30)</span></td><td class='best'>100.0% <span class='mut'>(30/30)</span></td></tr>
+<tr><td>Fuzzy</td><td class='best'>100.0% <span class='mut'>(300/300)</span></td><td>89.3% <span class='mut'>(268/300)</span></td><td>96.7% <span class='mut'>(290/300)</span></td></tr>
+<tr><td>gear</td><td class='best'>100.0% <span class='mut'>(300/300)</span></td><td>77.3% <span class='mut'>(232/300)</span></td><td>88.7% <span class='mut'>(266/300)</span></td></tr>
+<tr><td>RPM</td><td class='best'>100.0% <span class='mut'>(300/300)</span></td><td>78.3% <span class='mut'>(235/300)</span></td><td>87.0% <span class='mut'>(261/300)</span></td></tr>
+</table>
+<div class='mut'>Manifest okviri se interleaved ubacuju u PUN normalni tok (~900k poruka) po timestamp-u i ceo tok se skoruje redom (live režim). DoS = 10 burst-ova × 3 manifesta = 30 događaja; Fuzzy/gear/RPM = 100 pojedinačnih × 3 manifesta = 300 događaja.</div>
+<h2>5 · Vremenska efikasnost (skorovanje celog toka + ubrizganih)</h2>
+<table><tr><th>Metoda</th><th>vreme (s)</th><th>skorovanih okvira</th><th>µs / okvir</th></tr>
+<tr><td>Heuristika</td><td>37.0</td><td>990,011</td><td>37.4</td></tr>
+<tr><td>Isolation Forest</td><td>199.4</td><td>990,011</td><td>201.4</td></tr>
+<tr><td>One-Class SVM</td><td>85.3</td><td>990,011</td><td>86.1</td></tr>
+</table>
+<div class='mut'>Vreme za skorovanje CELOG normalnog toka (~900k okvira) sa interleaved ubrizganim okvirima (per-frame, batch), za sve tri metode.</div>
+<h2>6 · Reprodukcija</h2>
+<div class='mut'>Pokrenuti ponovo:<br><span class='mono'>.venv/bin/python backend/ids/run_all_evaluation.py</span></div>
+</body></html>
