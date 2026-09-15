@@ -10,6 +10,10 @@ __pycache__/
 # --- Runtime logs ---
 *.jsonl
 
+# --- Generated visualizations (regenerable via backend/ids/run_*_viz.py) ---
+backend/ids/report_plots/
+backend/ids/*_selfcontained.html
+
 # --- Dataset (large, ~GB) — NOT stored in Git ---
 dataset /
 

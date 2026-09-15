@@ -39,6 +39,7 @@ import ids_heuristic as HE
 import ids_injection as INJ
 import ids_isolation_forest as IF
 import ids_one_class_svm as SVM
+import ids_viz
 from ids_runtime import IdsEngine
 
 HERE = os.path.dirname(os.path.abspath(__file__))
@@ -175,6 +176,7 @@ def eval_forest():
         "manifest_seconds": _time_interleaved(eng, clean, INJ.MANIFEST_PATHS),
         "manifest_frames": n_inj,
         "stream_frames": len(clean) + INJECTED_COUNT,
+        "baseline": baseline,
     }
 
 
@@ -216,11 +218,18 @@ def eval_svm():
         "manifest_seconds": _time_interleaved(eng, clean, INJ.MANIFEST_PATHS),
         "manifest_frames": n_inj,
         "stream_frames": len(clean) + INJECTED_COUNT,
+        "baseline": baseline,
     }
 
 
 def _load_split():
     return HE.load_normal_split()
+
+
+def _load_baseline():
+    """Shared per-ID clean baseline (identical for IF and SVM — same TRAIN)."""
+    t, _, _ = HE.load_normal_split()
+    return IF.learn_baseline(t.reset_index(drop=True))
 
 
 def _per_frame_fpr(engine: IdsEngine, df: pd.DataFrame) -> tuple[int, int]:
@@ -422,7 +431,18 @@ def build_report(res_heuristic, res_forest, res_svm) -> str:
     L.append("</table>")
     L.append("<div class='mut'>Vreme za skorovanje CELOG normalnog toka (~900k okvira) sa interleaved ubrizganim okvirima (per-frame, batch), za sve tri metode.</div>")
 
-    L.append("<h2>6 · Reprodukcija</h2>")
+    # --- vizuelizacija feature-prostora ---
+    try:
+        baseline = res_forest.get("baseline")
+        if baseline is None:
+            baseline = _load_baseline()
+        plot_files = ids_viz.generate_plots(baseline)
+        L.append(ids_viz.plots_as_html(plot_files))
+    except Exception as e:  # viz ne sme da sruši izveštaj
+        L.append("<h2>7 · Vizuelizacija feature-prostora</h2>")
+        L.append(f"<div class='mut'>Vizuelizacija nije uspela: {_esc(e)}</div>")
+
+    L.append("<h2>8 · Reprodukcija</h2>")
     L.append("<div class='mut'>Pokrenuti ponovo:<br><span class='mono'>.venv/bin/python backend/ids/run_all_evaluation.py</span></div>")
 
     L.append("</body></html>")

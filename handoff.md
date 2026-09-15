@@ -232,6 +232,36 @@ granulat = okvir). **Izveštaj sada koristi live per-frame verziju** (isto kao S
 Fuzzy/gear/RPM = 10 trial-ova × 10 pojedinačnih (100 događaja). Kroz 3 manifesta →
 DoS 30 događaja, ostali po 300. (trial = nezavisna ponavljanja istog testa.)
 
+### Vizuelizacija feature-prostora (dodato 09.2026)
+
+Uz brojke, generisana je i vizuelizacija ML feature-prostora `(gap_z, max_abs_z,
+n_over_2)` koji dele IF i SVM — u ovoj ravni normalni saobraćaj formira **usku masu**
+(~99% na `max_abs_z ≤ 8.56`), a ubrizgani napadi imaju **širok rep udesno** (DoS kreće
+već od ~16, ostali do ~494). Skripte u `backend/ids/`:
+
+- `run_per_attack_viz.py` — NAJintuitivnije: jedan napad po panelu, normalna masa
+  (siva gustina) vs. napad (obojene tačke), 1D histogram + 2D prikaz, symlog `max_abs_z`.
+- `run_manifest_interleaved_viz.py` — statika 3D/2D na CELOM interleaved toku (~990k).
+- `run_manifest_interleaved_plotly3d.py` — interaktivni 3D (Plotly), self-contained
+  (offline, Plotly.js inlajnovan).
+- `run_svm_boundary_viz.py` — SVM odluke: granica odluke (2D kontura) + 3D obojeno po
+  SVM presudi (detektovano/propušteno).
+
+Izlaz: `backend/ids/report_plots/`; ugrađeno u `evaluation_report.html` (sekcije 7–9).
+**Nova zavisnost:** `plotly` (za interaktivni 3D; `pip install plotly`).
+
+### Status diplomskog `.docx` (poglavlja, 09.2026)
+
+Draftovi poglavlja (srpski, spremni za ubacivanje u docx) čuvaju se u korenu repoa:
+
+- `draft_poglavlje_6.md` — **"Rezultati i evaluacija"** (tabele 6.1–6.5 + diskusija),
+  napisano sa stvarnim brojkama iz `evaluation_report.html`.
+- `draft_poglavlje_7.md` — **"Zaključak"** (rezime, odgovor na istraživačko pitanje,
+  poređenje metoda, ograničenja, budući rad).
+
+Preostalo u docx-u: popraviti placeholder u §1.1, napisati §1.3 (struktura rada)
+i §8 (spisak slika), te uskladiti citate `[n]` u tekstu sa referencama.
+
 
 Važne naučne odluke (koje NE smemo zaboraviti kod implementacije):
 - Sva tri dele **isti feature-ekstraktor** (po CAN ID / sekundi: rate, pravilnost

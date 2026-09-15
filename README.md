@@ -111,6 +111,24 @@ let you **inject attacks** onto the bus:
 Backend: `backend/ids/ids_runtime.py` (unified per-frame `IdsEngine`) + the
 scoring/injection hooks in `backend/stream.py`.
 
+### Feature-space visualizations (evaluation report)
+
+The evaluation report (`backend/ids/evaluation_report.html`) embeds visualizations
+of the shared ML feature space `(gap_z, max_abs_z, n_over_2)` used by Isolation
+Forest and One-Class SVM:
+
+- **Per-attack grouping** — normal traffic as a tight grey mass vs. each attack
+  type (DoS / Fuzzy / gear / RPM) pulled to the right on a symlog `max_abs_z` axis
+  (`run_per_attack_viz.py`).
+- **Static 3D + 2D projections** of the full interleaved stream (~990k frames)
+  (`run_manifest_interleaved_viz.py`).
+- **Interactive, self-contained 3D plot** (rotates/zooms in the browser, no
+  internet needed — Plotly.js is inlined) (`run_manifest_interleaved_plotly3d.py`
+  and `run_svm_boundary_viz.py` for the SVM decision boundary).
+
+Generated PNG/HTML live under `backend/ids/report_plots/`. The interactive plots
+require `plotly` (`pip install plotly`).
+
 ### Live mode & recording (capture)
 
 The **Live** page shows the bus in real time and can save every received frame.
@@ -141,6 +159,8 @@ The **Live** page shows the bus in real time and can save every received frame.
 - ✅ IDS Isolation Forest detector (method #2) — global per-frame, validated on 3 manifests
 - ✅ IDS One-Class SVM detector (method #3) — global RBF, validated on 3 manifests
 - ✅ Inline IDS + attack injection in the Simulator (heuristic / IF / OCSVM, quarantine)
+- ✅ Offline evaluation (FPR / coverage / interleaved red-team detection / latency)
+  with a self-contained HTML report + feature-space visualizations (static + interactive 3D)
 - 🚧 Live capture hardware (ESP32 / socketcan) — planned; `source=live` is a
   dev replay bridge until then
 
@@ -148,4 +168,12 @@ The **Live** page shows the bus in real time and can save every received frame.
 
 - **Frontend:** React 19, Vite, Recharts
 - **Backend:** Python, FastAPI, pandas
+- **ML / evaluation:** scikit-learn, numpy, matplotlib, plotly (interactive 3D)
 - **ICS/hardware (planned):** ESP32, SN65HVD230 transceiver, SocketCAN
+
+## Thesis drafts
+
+Chapter drafts (Serbian, ready to paste into the `.docx`) live at the repo root:
+
+- `draft_poglavlje_6.md` — "Rezultati i evaluacija" (tables 6.1–6.5 + discussion)
+- `draft_poglavlje_7.md` — "Zaključak" (summary, research-question answer, limits, future work)
