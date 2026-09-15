@@ -250,19 +250,6 @@ već od ~16, ostali do ~494). Skripte u `backend/ids/`:
 Izlaz: `backend/ids/report_plots/`; ugrađeno u `evaluation_report.html` (sekcije 7–9).
 **Nova zavisnost:** `plotly` (za interaktivni 3D; `pip install plotly`).
 
-### Status diplomskog `.docx` (poglavlja, 09.2026)
-
-Draftovi poglavlja (srpski, spremni za ubacivanje u docx) čuvaju se u korenu repoa:
-
-- `draft_poglavlje_6.md` — **"Rezultati i evaluacija"** (tabele 6.1–6.5 + diskusija),
-  napisano sa stvarnim brojkama iz `evaluation_report.html`.
-- `draft_poglavlje_7.md` — **"Zaključak"** (rezime, odgovor na istraživačko pitanje,
-  poređenje metoda, ograničenja, budući rad).
-
-Preostalo u docx-u: popraviti placeholder u §1.1, napisati §1.3 (struktura rada)
-i §8 (spisak slika), te uskladiti citate `[n]` u tekstu sa referencama.
-
-
 Važne naučne odluke (koje NE smemo zaboraviti kod implementacije):
 - Sva tri dele **isti feature-ekstraktor** (po CAN ID / sekundi: rate, pravilnost
   ritma, promena vrijednosti) i **istu podelu**.
